@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from pathlib import Path
 from collections import namedtuple
 import pandas as pd
 
@@ -8,7 +9,7 @@ Tier = namedtuple("Tier", ["name", "entries"])
 Entry = namedtuple("Entry", ["begin", "end", "label", "tier"])
 
 
-def read_textgrid(filename, fileEncoding="utf-8"):
+def read(filename, fileEncoding="utf-8"):
     """
     Reads a TextGrid file into pandas data frame.
     Each entry is a dictionary with keys "begin", "end", "label", "tier"
@@ -48,7 +49,8 @@ def read_textgrid(filename, fileEncoding="utf-8"):
 
     grid = pd.DataFrame(intervals)
     grid['dur'] = grid['end'] - grid['begin']
-    grid = grid[['begin', 'end', 'dur', 'label', 'tier']]
+    grid['file'] = Path(filename).stem
+    grid = grid[['file', 'tier', 'label', 'begin', 'end', 'dur']]
 
     return grid
 
@@ -72,7 +74,7 @@ def _read(f):
 
 def _build_entry(i, content, tier):
     """
-    takes the ith line that begin an interval and returns
+    takes the ith line that begin an interval and returns 
     a dictionary of values
     """
     begin = _get_float_val(content[i + 1])  # addition is cheap typechecking
@@ -99,11 +101,14 @@ def _get_str_val(string):
     return string.split('"')[-2]
 
 
-def interval_at(grid, timepoint, tier=None):
+def interval_at(grid, timepoint, speaker=None, tier=None):
     """
     Data frame of intervals overlapping timepoint (inclusive) 
-    on all tiers or specified tier
+    for all speakers or specified speaker, on all tiers or 
+    specified tier
     """
+    if speaker is not None:
+        grid = grid[(grid['speaker'] == speaker)]
     if tier is not None:
         grid = grid[(grid['tier'] == tier)]
     intervals = grid[((grid['begin'] <= timepoint) &
@@ -112,13 +117,89 @@ def interval_at(grid, timepoint, tier=None):
     return intervals
 
 
-def intervals_between(grid, begin, end, tier=None):
+def intervals_between(grid, begin, end, speaker=None, tier=None):
     """
     Data frame of intervals between timepoints (inclusive) 
-    on all tiers or specified tier
+    for all speakers or specified speaker, on all tiers or 
+    specified tier
     """
+    if speaker is not None:
+        grid = grid[(grid['speaker'] == speaker)]
     if tier is not None:
         grid = grid[(grid['tier'] == tier)]
     intervals = grid[((grid['begin'] >= begin) & (grid['end'] <= end))]
     intervals = intervals.reset_index(drop=True)
     return intervals
+
+
+def previous_interval(grid,
+                      interval,
+                      by_speaker=True,
+                      skip=['sp'],
+                      max_skip_dur=500.0):
+    """
+    Return interval before specified one on the same tier of grid
+    """
+    return _adjacent_interval(
+        grid, interval, by_speaker, skip, max_skip_dur, direction='before')
+
+
+def following_interval(grid,
+                       interval,
+                       by_speaker=True,
+                       skip=['sp'],
+                       max_skip_dur=500.0):
+    """
+    Return interval after specified one on the same tier of grid
+    """
+    return _adjacent_interval(
+        grid, interval, by_speaker, skip, max_skip_dur, direction='after')
+
+
+def _adjacent_interval(grid,
+                       interval,
+                       by_speaker=True,
+                       skip=['sp'],
+                       max_skip_dur=500.0,
+                       direction=None):
+    """
+    Return interval before/after specified one on the same tier of grid
+    grid: textgrid as pd data frame
+    interval: row of grid
+    by_speaker: require matching speaker fields
+    skip: skip one short instance of sp/pause/etc.
+    max_skip_dur (ms): do not skip long instances of sp/pause/etc.
+    """
+    if direction is None:
+        raise Error('Must specify direction for _close_interval()')
+        return
+    idx = interval.name
+
+    # Handle direction and grid edges
+    if direction == 'before':
+        if idx == 0:
+            return None
+        deltas = [-1, -2]
+    if direction == 'after':
+        if idx == grid.index[-1]:
+            return None
+        deltas = [1, 2]
+
+    interval2 = None
+    for delta in deltas:
+        interval2 = grid.iloc[idx + delta]
+        # Require matching tier
+        if interval2['tier'] != interval['tier']:
+            break
+        # Optionally require matching speaker fields
+        if by_speaker and (interval2['speaker'] != interval['speaker']):
+            break
+        # Skip short pauses, fail on long ones
+        if interval2['label2'] in skip:
+            if interval2['dur'] > max_skip_dur:
+                break
+            continue
+        # Return closest non-pause word
+        else:
+            break
+    return interval2
