@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import re, sys
 from pathlib import Path
 from collections import namedtuple
 import pandas as pd
@@ -7,6 +8,8 @@ import pandas as pd
 Tier = namedtuple("Tier", ["name", "entries"])
 
 Entry = namedtuple("Entry", ["begin", "end", "label", "tier"])
+
+vowel_regex = '^[AEIOUaeiou].[012]$'
 
 
 def read(filename, fileEncoding="utf-8"):
@@ -48,7 +51,7 @@ def read(filename, fileEncoding="utf-8"):
     ]
 
     grid = pd.DataFrame(intervals)
-    grid['dur'] = grid['end'] - grid['begin']
+    grid['dur'] = 1000.0 * (grid['end'] - grid['begin'])  # ms
     grid['file'] = Path(filename).stem
     grid = grid[['file', 'tier', 'label', 'begin', 'end', 'dur']]
 
@@ -134,31 +137,34 @@ def intervals_between(grid, begin, end, speaker=None, tier=None):
 
 def previous_interval(grid,
                       interval,
-                      by_speaker=True,
+                      label='label',
+                      speaker='speaker',
                       skip=['sp'],
                       max_skip_dur=500.0):
     """
     Return interval before specified one on the same tier of grid
     """
     return _adjacent_interval(
-        grid, interval, by_speaker, skip, max_skip_dur, direction='before')
+        grid, interval, label, speaker, skip, max_skip_dur, direction='before')
 
 
 def following_interval(grid,
                        interval,
-                       by_speaker=True,
+                       label='label',
+                       speaker='speaker',
                        skip=['sp'],
                        max_skip_dur=500.0):
     """
     Return interval after specified one on the same tier of grid
     """
     return _adjacent_interval(
-        grid, interval, by_speaker, skip, max_skip_dur, direction='after')
+        grid, interval, label, speaker, skip, max_skip_dur, direction='after')
 
 
 def _adjacent_interval(grid,
                        interval,
-                       by_speaker=True,
+                       label='label',
+                       speaker='speaker',
                        skip=['sp'],
                        max_skip_dur=500.0,
                        direction=None):
@@ -166,13 +172,13 @@ def _adjacent_interval(grid,
     Return interval before/after specified one on the same tier of grid
     grid: textgrid as pd data frame
     interval: row of grid
-    by_speaker: require matching speaker fields
-    skip: skip one short instance of sp/pause/etc.
-    max_skip_dur (ms): do not skip long instances of sp/pause/etc.
+    label (str): key of labels in grid (default = 'label')
+    speaker (str): key of speaker in grid (default = 'speaker')
+    skip (list): skip one short instance of sp/pause/etc. (default = ['sp'])
+    max_skip_dur (ms): do not skip long instances of sp/pause/etc. (default = 500ms)
     """
     if direction is None:
-        raise Error('Must specify direction for _close_interval()')
-        return
+        raise Error('Must specify direction for _adjacent_interval()')
     idx = interval.name
 
     # Handle direction and grid edges
@@ -185,21 +191,81 @@ def _adjacent_interval(grid,
             return None
         deltas = [1, 2]
 
-    interval2 = None
     for delta in deltas:
         interval2 = grid.iloc[idx + delta]
         # Require matching tier
         if interval2['tier'] != interval['tier']:
-            break
+            return None
         # Optionally require matching speaker fields
-        if by_speaker and (interval2['speaker'] != interval['speaker']):
-            break
+        if (speaker is not None) and (interval2[speaker] != interval[speaker]):
+            return None
         # Skip short pauses, fail on long ones
-        if interval2['label2'] in skip:
+        if interval2[label] in skip:
             if interval2['dur'] > max_skip_dur:
-                break
+                return None
             continue
-        # Return closest non-pause word
+        # Return closest non-pause interval
         else:
+            return interval2
+    return None
+
+
+def speaking_rate_before(grid, interval, label='word', window=1000.0):
+    """
+    Speaking rate (syllable / second) in specified window prior to interval
+    label (str): key of word labels in grid (default = 'word')
+    window (ms): duration of window (default = 1000.0)
+    """
+    # Words (from all speakers) in window prior to interval
+    begin = interval['begin'] - window / 1000.0
+    if begin < 0.0:
+        begin = 0.0
+    end = interval['begin']
+    words = intervals_between(grid, begin, end, tier='word')
+    nwords = len(words)
+    if nwords == 0:
+        return None
+
+    # Contiguous words with same speaker as interval
+    speaker = interval['speaker']
+    words_contig = []
+    for i in range(nwords - 1, -1, -1):
+        word = words.iloc[i]
+        if word['speaker'] != speaker:
             break
-    return interval2
+        words_contig.append(word)
+    if len(words_contig) == 0:
+        return None
+    words_contig.reverse()
+
+    # Window duration and speaking rate
+    window_begin = words_contig[0]['begin']
+    window_end = words_contig[-1]['end']
+    window_dur = (window_end - window_begin)  # seconds
+    phons_contig = intervals_between(
+        grid, window_begin, window_end, tier='phone')
+    if len(phons_contig) == 0:
+        return None
+    vowels_contig = phons_contig[(
+        phons_contig['label'].str.contains(vowel_regex))]
+    if len(vowels_contig) == 0:
+        return None
+    speaking_rate = float(len(vowels_contig)) / float(window_dur)
+
+    return speaking_rate
+
+
+def main():
+    fgrid = Path.home() / 'Sounds/SCOTUS/fave_align/2013/12-1168_11025.TextGrid'
+    grid = read(fgrid)
+    grid['speaker'] = [re.sub(' -.*', '', x) for x in grid['tier']]
+    grid['tier'] = [re.sub('.*- ', '', x) for x in grid['tier']]
+    grid['word'] = grid['label']
+    interval = grid.iloc[-100]
+    speaking_rate = speaking_rate_before(grid, interval)
+    print(f'{speaking_rate} syllables / second')
+    print(1.0 / speaking_rate * 1000.0)
+
+
+if __name__ == '__main__':
+    main()
