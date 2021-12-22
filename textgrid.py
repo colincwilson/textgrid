@@ -4,10 +4,11 @@ import re, sys
 from pathlib import Path
 from collections import namedtuple
 import pandas as pd
+import tgt
 
 Tier = namedtuple("Tier", ["name", "entries"])
 
-Entry = namedtuple("Entry", ["begin", "end", "label", "tier"])
+Entry = namedtuple("Entry", ["start", "end", "label", "tier"])
 
 vowel_regex = '^[AEIOUaeiou].[012]$'
 
@@ -15,10 +16,10 @@ vowel_regex = '^[AEIOUaeiou].[012]$'
 def read(filename, fileEncoding="utf-8"):
     """
     Reads a TextGrid file into pandas data frame.
-    Each entry is a dictionary with keys "begin", "end", "label", "tier"
+    Each entry is a dictionary with keys "start", "end", "label", "tier"
 
     Points and intervals use the same format, 
-    but the value for "begin" and "end" are the same
+    but the value for "start" and "end" are the same
 
     Optionally, supply fileEncoding as argument. This defaults to "utf-8", tested with 'utf-16-be'.
     """
@@ -51,9 +52,9 @@ def read(filename, fileEncoding="utf-8"):
     ]
 
     grid = pd.DataFrame(intervals)
-    grid['dur'] = 1000.0 * (grid['end'] - grid['begin'])  # ms
+    grid['dur'] = 1000.0 * (grid['end'] - grid['start'])  # ms
     grid['file'] = Path(filename).stem
-    grid = grid[['file', 'tier', 'label', 'begin', 'end', 'dur']]
+    grid = grid[['file', 'tier', 'label', 'start', 'end', 'dur']]
 
     return grid
 
@@ -80,14 +81,14 @@ def _build_entry(i, content, tier):
     takes the ith line that begin an interval and returns 
     a dictionary of values
     """
-    begin = _get_float_val(content[i + 1])  # addition is cheap typechecking
+    start = _get_float_val(content[i + 1])  # addition is cheap typechecking
     if content[i].startswith("intervals ["):
         offset = 1
     else:
         offset = 0  # for "point" objects
     end = _get_float_val(content[i + 1 + offset])
     label = _get_str_val(content[i + 2 + offset])
-    return Entry(begin=begin, end=end, label=label, tier=tier)
+    return Entry(start=start, end=end, label=label, tier=tier)
 
 
 def _get_float_val(string):
@@ -114,13 +115,13 @@ def interval_at(grid, timepoint, speaker=None, tier=None):
         grid = grid[(grid['speaker'] == speaker)]
     if tier is not None:
         grid = grid[(grid['tier'] == tier)]
-    intervals = grid[((grid['begin'] <= timepoint) &
+    intervals = grid[((grid['start'] <= timepoint) &
                       (grid['end'] >= timepoint))]
     intervals = intervals.reset_index(drop=True)
     return intervals
 
 
-def intervals_between(grid, begin, end, speaker=None, tier=None):
+def intervals_between(grid, start, end, speaker=None, tier=None):
     """
     Data frame of intervals between timepoints (inclusive) 
     for all speakers or specified speaker, on all tiers or 
@@ -130,7 +131,7 @@ def intervals_between(grid, begin, end, speaker=None, tier=None):
         grid = grid[(grid['speaker'] == speaker)]
     if tier is not None:
         grid = grid[(grid['tier'] == tier)]
-    intervals = grid[((grid['begin'] >= begin) & (grid['end'] <= end))]
+    intervals = grid[((grid['start'] >= start) & (grid['end'] <= end))]
     intervals = intervals.reset_index(drop=True)
     return intervals
 
@@ -217,11 +218,11 @@ def speaking_rate_before(grid, interval, label='word', window=1000.0):
     window (ms): duration of window (default = 1000.0)
     """
     # Words (from all speakers) in window prior to interval
-    begin = interval['begin'] - window / 1000.0
-    if begin < 0.0:
-        begin = 0.0
-    end = interval['begin']
-    words = intervals_between(grid, begin, end, tier='word')
+    start = interval['start'] - window / 1000.0
+    if start < 0.0:
+        start = 0.0
+    end = interval['end']
+    words = intervals_between(grid, start, end, tier='word')
     nwords = len(words)
     if nwords == 0:
         return None
@@ -239,11 +240,11 @@ def speaking_rate_before(grid, interval, label='word', window=1000.0):
     words_contig.reverse()
 
     # Window duration and speaking rate
-    window_begin = words_contig[0]['begin']
+    window_start = words_contig[0]['start']
     window_end = words_contig[-1]['end']
-    window_dur = (window_end - window_begin)  # seconds
+    window_dur = (window_end - window_start)  # seconds
     phons_contig = intervals_between(
-        grid, window_begin, window_end, tier='phone')
+        grid, window_start, window_end, tier='phone')
     if len(phons_contig) == 0:
         return None
     vowels_contig = phons_contig[(
@@ -253,6 +254,58 @@ def speaking_rate_before(grid, interval, label='word', window=1000.0):
     speaking_rate = float(len(vowels_contig)) / float(window_dur)
 
     return speaking_rate
+
+
+def write(dat, fout, speaker=None, tiers=None):
+    """
+    Write pandas dataframe to textgrid
+    fout (str/path): output file
+    speaker (str): name of speaker field (default is None)
+    tiers (list): tier names (default is None)
+    """
+    tier_list = []
+    if speaker is not None:
+        for spkr in dat[speaker].unique():
+            dat1 = dat[(dat[speaker] == spkr)]
+            tier_list.extend(_make_tiers(dat1, speaker=spkr, tiers=tiers))
+    else:
+        tier_list = _make_tiers(dat, speaker=None, tiers=tiers)
+
+    start_time = 0.0
+    end_time = dat['end'].max()
+    grid = tgt.core.TextGrid(filename=fout)
+    for tier in tier_list:
+        tier.start_time = start_time
+        tier.end_time = end_time
+        grid.add_tier(tier)
+    tgt.io.write_to_file(grid, filename=fout, format='long')
+    return grid
+
+
+def _make_tiers(dat, speaker, tiers):
+    """
+    Make one or more tiers for a speaker
+    """
+    tier_list = []
+    if tiers is not None:
+        for tier in tiers:
+            dat1 = dat[(dat['tier'] == tier)]
+            tier_list.append(_make_tier(dat1, speaker=speaker, tier=tier))
+    else:
+        tier_list.append(_make_tier(dat, speaker, 'utterance'))
+    return tier_list
+
+
+def _make_tier(dat, speaker, tier):
+    """
+    Make one tier for a speaker
+    """
+    tier_name = f'{speaker} - {tier}' if speaker is not None else f'{tier}'
+    tier = tgt.core.IntervalTier(name=tier_name)
+    for i, row in dat.iterrows():
+        interval = tgt.core.Interval(row['start'], row['end'], row['label'])
+        tier.add_interval(interval)
+    return tier
 
 
 def main():
@@ -265,6 +318,11 @@ def main():
     speaking_rate = speaking_rate_before(grid, interval)
     print(f'{speaking_rate} syllables / second')
     print(1.0 / speaking_rate * 1000.0)
+    write(
+        grid,
+        Path.home() / 'Desktop/tmp.TextGrid',
+        speaker='speaker',
+        tiers=['word', 'phone'])
 
 
 if __name__ == '__main__':
