@@ -105,6 +105,58 @@ def _get_str_val(string):
     return string.split('"')[-2]
 
 
+def write(dat, fout, speaker=None, tiers=None):
+    """
+    Write pandas dataframe to textgrid
+    fout (str/path): output file
+    speaker (str): name of speaker field (default is None)
+    tiers (list): tier names (default is None)
+    """
+    tier_list = []
+    if speaker is not None:
+        for spkr in dat[speaker].unique():
+            dat1 = dat[(dat[speaker] == spkr)]
+            tier_list.extend(_make_tiers(dat1, speaker=spkr, tiers=tiers))
+    else:
+        tier_list = _make_tiers(dat, speaker=None, tiers=tiers)
+
+    start_time = 0.0
+    end_time = dat['end'].max()
+    grid = tgt.core.TextGrid(filename=fout)
+    for tier in tier_list:
+        tier.start_time = start_time
+        tier.end_time = end_time
+        grid.add_tier(tier)
+    tgt.io.write_to_file(grid, filename=fout, format='long')
+    return grid
+
+
+def _make_tiers(dat, speaker, tiers):
+    """
+    Make one or more tiers for a speaker
+    """
+    tier_list = []
+    if tiers is not None:
+        for tier in tiers:
+            dat1 = dat[(dat['tier'] == tier)]
+            tier_list.append(_make_tier(dat1, speaker=speaker, tier=tier))
+    else:
+        tier_list.append(_make_tier(dat, speaker, 'utterance'))
+    return tier_list
+
+
+def _make_tier(dat, speaker, tier):
+    """
+    Make one tier for a speaker
+    """
+    tier_name = f'{speaker} - {tier}' if speaker is not None else f'{tier}'
+    tier = tgt.core.IntervalTier(name=tier_name)
+    for i, row in dat.iterrows():
+        interval = tgt.core.Interval(row['start'], row['end'], row['label'])
+        tier.add_interval(interval)
+    return tier
+
+
 def interval_at(grid, timepoint, speaker=None, tier=None):
     """
     Data frame of intervals overlapping timepoint (inclusive) 
@@ -254,58 +306,6 @@ def speaking_rate_before(grid, interval, label='word', window=1000.0):
     speaking_rate = float(len(vowels_contig)) / float(window_dur)
 
     return speaking_rate
-
-
-def write(dat, fout, speaker=None, tiers=None):
-    """
-    Write pandas dataframe to textgrid
-    fout (str/path): output file
-    speaker (str): name of speaker field (default is None)
-    tiers (list): tier names (default is None)
-    """
-    tier_list = []
-    if speaker is not None:
-        for spkr in dat[speaker].unique():
-            dat1 = dat[(dat[speaker] == spkr)]
-            tier_list.extend(_make_tiers(dat1, speaker=spkr, tiers=tiers))
-    else:
-        tier_list = _make_tiers(dat, speaker=None, tiers=tiers)
-
-    start_time = 0.0
-    end_time = dat['end'].max()
-    grid = tgt.core.TextGrid(filename=fout)
-    for tier in tier_list:
-        tier.start_time = start_time
-        tier.end_time = end_time
-        grid.add_tier(tier)
-    tgt.io.write_to_file(grid, filename=fout, format='long')
-    return grid
-
-
-def _make_tiers(dat, speaker, tiers):
-    """
-    Make one or more tiers for a speaker
-    """
-    tier_list = []
-    if tiers is not None:
-        for tier in tiers:
-            dat1 = dat[(dat['tier'] == tier)]
-            tier_list.append(_make_tier(dat1, speaker=speaker, tier=tier))
-    else:
-        tier_list.append(_make_tier(dat, speaker, 'utterance'))
-    return tier_list
-
-
-def _make_tier(dat, speaker, tier):
-    """
-    Make one tier for a speaker
-    """
-    tier_name = f'{speaker} - {tier}' if speaker is not None else f'{tier}'
-    tier = tgt.core.IntervalTier(name=tier_name)
-    for i, row in dat.iterrows():
-        interval = tgt.core.Interval(row['start'], row['end'], row['label'])
-        tier.add_interval(interval)
-    return tier
 
 
 def main():
