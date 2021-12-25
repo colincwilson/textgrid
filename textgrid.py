@@ -107,7 +107,7 @@ def _get_str_val(string):
 
 def write(dat, fout, speaker=None, tiers=None):
     """
-    Write pandas dataframe to textgrid
+    Write out pandas dataframe as a TextGrid file (long format).
     fout (str/path): output file
     speaker (str): name of speaker field (default is None)
     tiers (list): tier names (default is None)
@@ -152,8 +152,11 @@ def _make_tier(dat, speaker, tier):
     tier_name = f'{speaker} - {tier}' if speaker is not None else f'{tier}'
     tier = tgt.core.IntervalTier(name=tier_name)
     for i, row in dat.iterrows():
-        interval = tgt.core.Interval(row['start'], row['end'], row['label'])
-        tier.add_interval(interval)
+        try:
+            interval = tgt.core.Interval(row['start'], row['end'], row['label'])
+            tier.add_interval(interval)
+        except:
+            print(f'Error creating interval from {row}')
     return tier
 
 
@@ -162,6 +165,10 @@ def interval_at(grid, timepoint, speaker=None, tier=None):
     Data frame of intervals overlapping timepoint (inclusive) 
     for all speakers or specified speaker, on all tiers or 
     specified tier
+    grid (dataframe)
+    timepoint (float): time point (s)
+    speaker (str): speaker name
+    tier (str): tier name
     """
     if speaker is not None:
         grid = grid[(grid['speaker'] == speaker)]
@@ -178,6 +185,11 @@ def intervals_between(grid, start, end, speaker=None, tier=None):
     Data frame of intervals between timepoints (inclusive) 
     for all speakers or specified speaker, on all tiers or 
     specified tier
+    grid (dataframe)
+    start (float): start time (s)
+    end (float): end time (s)
+    speaker (str): speaker name
+    tier (str): tier name
     """
     if speaker is not None:
         grid = grid[(grid['speaker'] == speaker)]
@@ -223,7 +235,7 @@ def _adjacent_interval(grid,
                        direction=None):
     """
     Return interval before/after specified one on the same tier of grid
-    grid: textgrid as pd data frame
+    grid (dataframe)
     interval: row of grid
     label (str): key of labels in grid (default = 'label')
     speaker (str): key of speaker in grid (default = 'speaker')
