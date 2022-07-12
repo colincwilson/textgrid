@@ -204,7 +204,7 @@ def previous_interval(grid,
                       interval,
                       label='label',
                       speaker='speaker',
-                      skip=['sp'],
+                      skip=['sp', ''],
                       max_skip_dur=500.0):
     """
     Return interval before specified one on the same tier of grid
@@ -217,7 +217,7 @@ def following_interval(grid,
                        interval,
                        label='label',
                        speaker='speaker',
-                       skip=['sp'],
+                       skip=['sp', ''],
                        max_skip_dur=500.0):
     """
     Return interval after specified one on the same tier of grid
@@ -230,7 +230,7 @@ def _adjacent_interval(grid,
                        interval,
                        label='label',
                        speaker='speaker',
-                       skip=['sp'],
+                       skip=['sp', ''],
                        max_skip_dur=500.0,
                        direction=None):
     """
@@ -275,7 +275,11 @@ def _adjacent_interval(grid,
     return None
 
 
-def speaking_rate_before(grid, interval, label='word', window=1000.0):
+def speaking_rate_before(grid,
+                         interval,
+                         word_tier='word',
+                         phone_tier='phone',
+                         window=1000.0):
     """
     Speaking rate (syllable / second) in specified window prior to interval
     label (str): key of word labels in grid (default = 'word')
@@ -285,8 +289,8 @@ def speaking_rate_before(grid, interval, label='word', window=1000.0):
     start = interval['start'] - window / 1000.0
     if start < 0.0:
         start = 0.0
-    end = interval['end']
-    words = intervals_between(grid, start, end, tier='word')
+    end = interval['start']
+    words = intervals_between(grid, start, end, tier=word_tier)
     nwords = len(words)
     if nwords == 0:
         return None
@@ -308,7 +312,7 @@ def speaking_rate_before(grid, interval, label='word', window=1000.0):
     window_end = words_contig[-1]['end']
     window_dur = (window_end - window_start)  # seconds
     phons_contig = intervals_between(
-        grid, window_start, window_end, tier='phone')
+        grid, window_start, window_end, tier=phone_tier)
     if len(phons_contig) == 0:
         return None
     vowels_contig = phons_contig[(
