@@ -108,9 +108,9 @@ def _get_str_val(string):
 def write(dat, fout, speaker=None, tiers=None):
     """
     Write out pandas dataframe as a TextGrid file (long format).
-    fout (str/path): output file
-    speaker (str): name of speaker field (default is None)
-    tiers (list): tier names (default is None)
+        fout (str/path): output file
+        speaker (str): name of speaker field (default is None)
+        tiers (list): tier names (default is None)
     """
     tier_list = []
     if speaker is not None:
@@ -133,7 +133,7 @@ def write(dat, fout, speaker=None, tiers=None):
 
 def _make_tiers(dat, speaker, tiers):
     """
-    Make one or more tiers for a speaker
+    Make one or more tiers for a speaker.
     """
     tier_list = []
     if tiers is not None:
@@ -147,9 +147,10 @@ def _make_tiers(dat, speaker, tiers):
 
 def _make_tier(dat, speaker, tier):
     """
-    Make one tier for a speaker
+    Make one tier for a speaker.
     """
-    tier_name = f'{speaker} - {tier}' if speaker is not None else f'{tier}'
+    tier_name = f'{speaker} - {tier}' \
+        if speaker is not None else f'{tier}'
     tier = tgt.core.IntervalTier(name=tier_name)
     for i, row in dat.iterrows():
         try:
@@ -164,11 +165,11 @@ def interval_at(grid, timepoint, speaker=None, tier=None):
     """
     Data frame of intervals overlapping timepoint (inclusive) 
     for all speakers or specified speaker, on all tiers or 
-    specified tier
-    grid (dataframe)
-    timepoint (float): time point (s)
-    speaker (str): speaker name
-    tier (str): tier name
+    specified tier.
+        grid (dataframe)
+        timepoint (float): time point (s)
+        speaker (str): speaker name
+        tier (str): tier name
     """
     if speaker is not None:
         grid = grid[(grid['speaker'] == speaker)]
@@ -184,12 +185,12 @@ def intervals_between(grid, start, end, speaker=None, tier=None):
     """
     Data frame of intervals between timepoints (inclusive) 
     for all speakers or specified speaker, on all tiers or 
-    specified tier
-    grid (dataframe)
-    start (float): start time (s)
-    end (float): end time (s)
-    speaker (str): speaker name
-    tier (str): tier name
+    specified tier.
+        grid (dataframe)
+        start (float): start time (s)
+        end (float): end time (s)
+        speaker (str): speaker name
+        tier (str): tier name
     """
     if speaker is not None:
         grid = grid[(grid['speaker'] == speaker)]
@@ -207,7 +208,7 @@ def previous_interval(grid,
                       skip=['sp', ''],
                       max_skip_dur=500.0):
     """
-    Return interval before specified one on the same tier of grid
+    Return interval before specified one on the same tier of grid.
     """
     return _adjacent_interval(
         grid, interval, label, speaker, skip, max_skip_dur, direction='before')
@@ -220,7 +221,7 @@ def following_interval(grid,
                        skip=['sp', ''],
                        max_skip_dur=500.0):
     """
-    Return interval after specified one on the same tier of grid
+    Return interval after specified one on the same tier of grid.
     """
     return _adjacent_interval(
         grid, interval, label, speaker, skip, max_skip_dur, direction='after')
@@ -234,13 +235,13 @@ def _adjacent_interval(grid,
                        max_skip_dur=500.0,
                        direction=None):
     """
-    Return interval before/after specified one on the same tier of grid
-    grid (dataframe)
-    interval: row of grid
-    label (str): key of labels in grid (default = 'label')
-    speaker (str): key of speaker in grid (default = 'speaker')
-    skip (list): skip one short instance of sp/pause/etc. (default = ['sp'])
-    max_skip_dur (ms): do not skip long instances of sp/pause/etc. (default = 500ms)
+    Return interval before/after specified one on the same tier of grid.
+        grid (dataframe)
+        interval: row of grid
+        label (str): key of labels in grid (default = 'label')
+        speaker (str): key of speaker in grid (default = 'speaker')
+        skip (list): skip one short instance of sp/pause/etc. (default = ['sp'])
+        max_skip_dur (ms): do not skip long instances of sp/pause/etc. (default = 500ms)
     """
     if direction is None:
         raise Error('Must specify direction for _adjacent_interval()')
@@ -281,9 +282,9 @@ def speaking_rate_before(grid,
                          phone_tier='phone',
                          window=1000.0):
     """
-    Speaking rate (syllable / second) in specified window prior to interval
-    label (str): key of word labels in grid (default = 'word')
-    window (ms): duration of window (default = 1000.0)
+    Speaking rate (syllable / second) in specified window prior to interval.
+        label (str): key of word labels in grid (default = 'word')
+        window (ms): duration of window (default = 1000.0)
     """
     # Words (from all speakers) in window prior to interval
     start = interval['start'] - window / 1000.0
