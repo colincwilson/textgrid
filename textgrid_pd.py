@@ -1,5 +1,3 @@
-#!/usr/bin/python
-
 import re, sys
 from pathlib import Path
 from collections import namedtuple
@@ -286,7 +284,7 @@ def speaking_rate_before(grid,
         label (str): key of word labels in grid (default = 'word')
         window (ms): duration of window (default = 1000.0)
     """
-    # Words (from all speakers) in window prior to interval
+    # Words (from all speakers) in window prior to interval.
     start = interval['start'] - window / 1000.0
     if start < 0.0:
         start = 0.0
@@ -296,7 +294,7 @@ def speaking_rate_before(grid,
     if nwords == 0:
         return None
 
-    # Contiguous words with same speaker as interval
+    # Contiguous words with same speaker as interval.
     speaker = interval['speaker']
     words_contig = []
     for i in range(nwords - 1, -1, -1):
@@ -308,7 +306,7 @@ def speaking_rate_before(grid,
         return None
     words_contig.reverse()
 
-    # Window duration and speaking rate
+    # Window duration and speaking rate.
     window_start = words_contig[0]['start']
     window_end = words_contig[-1]['end']
     window_dur = (window_end - window_start)  # seconds
