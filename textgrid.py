@@ -4,11 +4,8 @@ from collections import namedtuple
 import polars as pl
 import tgt
 
-Tier = namedtuple("Tier", ["name", "entries"])
-
-Entry = namedtuple("Entry", ["start", "end", "label", "tier"])
-
 vowel_regex = '^[AEIOUaeiou].[012]$'
+vowel_regex_nostress = '^[AEIOUaeiou].?$'
 mfa_tier_regex = '^(.+) - (phones|words|utterances)$'
 
 # # # # # # # # # #
@@ -96,6 +93,61 @@ def _make_tier(dat, speaker, tier):
         except:
             print(f'Error adding interval {interval}')
     return tier
+
+
+def combine_tiers(dat):
+    """
+    Combine word and phone tiers within speaker.
+    """
+    # Wrangle word tier.
+    dat_word = dat \
+        .filter(pl.col('tier') == "words") \
+        .rename({"label": "word", "start": "word_start",
+                 "end": "word_end"}) \
+        .sort(['file', 'speaker', 'word_start'])
+    dat_word = dat_word[['file', 'speaker', 'word', 'word_start', 'word_end']]
+
+    # Assign consecutive ids to words.
+    dat_word = dat_word.with_columns( \
+        pl.Series(name='word_id', values=list(range(len(dat_word)))))
+
+    # Wrangle phon tier.
+    dat_phon = dat \
+        .filter(pl.col('tier') == "phones") \
+        .sort(['file', 'speaker', 'start'])
+
+    # Assign non-decreasing word ids to phones.
+    i = 0
+    n = len(dat_phon)
+    word_ids = [-1] * n
+    for word in dat_word.iter_rows(named=True):
+        while i < n:
+            phon = dat_phon.row(i, named=True)
+            if phon['file'] != word['file']:
+                break
+            if phon['speaker'] != word['speaker']:
+                break
+            if phon['start'] < word['word_start']:
+                i += 1
+                continue
+            if phon['end'] <= word['word_end']:
+                word_ids[i] = word['word_id']
+                i += 1
+                continue
+            break
+
+    dat_phon = dat_phon.with_columns( \
+        pl.Series(name='word_id', values=word_ids))
+
+    # Report phones with missing word ids.
+    dat_miss = dat_phon.filter(pl.col('word_id') == -1)
+    if len(dat_miss) > 0:
+        print(f'Phones missing word ids ({len(dat_miss)})')
+        print(dat_miss)
+
+    # Merge words and phones on word ids.
+    ret = dat_phon.join(dat_word, on=['file', 'speaker', 'word_id'])
+    return ret
 
 
 def interval_at(dat, timepoint, speakers=None, tiers=None):
