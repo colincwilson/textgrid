@@ -1,4 +1,5 @@
 import re, sys
+import numpy as np
 from pathlib import Path
 from collections import namedtuple
 import polars as pl
@@ -32,8 +33,14 @@ def read(filename, fileEncoding="utf-8"):
 
     dat = pl.DataFrame(dat,
                        schema=['speaker', 'tier', 'label', 'start', 'end'])
-    dat = dat.with_columns(file=pl.lit(filename))
-    dat = dat[['file', 'speaker', 'tier', 'label', 'start', 'end']]
+    dat = dat.with_columns( \
+        filename=pl.lit(filename),
+        dur_ms=1000.0*(pl.col('end') - pl.col('start')))
+
+    dat = dat[[
+        'filename', 'speaker', 'tier', 'label', 'start', 'end', 'dur_ms'
+    ]]
+    dat = dat.sort(['speaker', 'tier', 'start', 'end'])
 
     return dat
 
@@ -121,6 +128,7 @@ def combine_tiers(dat):
     n = len(dat_phon)
     word_ids = [-1] * n
     for word in dat_word.iter_rows(named=True):
+        # checkme: use filtering instead?
         while i < n:
             phon = dat_phon.row(i, named=True)
             if phon['file'] != word['file']:
@@ -157,7 +165,7 @@ def interval_at(dat, timepoint, speakers=None, tiers=None):
     specified tiers.
         dat: polars dataframe
         timepoint (float): time point (s)
-        speaker (list): speakers to include (None => all)
+        speakers (list): speakers to include (None => all)
         tier (str): tiers to include (None => all)
     """
     dat1 = dat
@@ -165,12 +173,12 @@ def interval_at(dat, timepoint, speakers=None, tiers=None):
         dat1 = dat1.filter(pl.col('speaker').is_in(speakers))
     if tiers is not none:
         dat1 = dat1.filter(pl.col('tier').is_in(tiers))
-    dat1 = dat1.filter((pl.col('start') <= timepoint)
-                       & (pl.col('end') >= timepoint))
+    dat1 = dat1.filter((pl.col('start') <= timepoint),
+                       (pl.col('end') >= timepoint))
     return dat1
 
 
-def intervals_between(dat, start, end, speaker=None, tier=None):
+def intervals_between(dat, start, end, speakers=None, tier=None):
     """
     Data frame of intervals between timepoints (inclusive) 
     for all speakers or specified speakers, on all tiers or 
@@ -178,106 +186,75 @@ def intervals_between(dat, start, end, speaker=None, tier=None):
         dat: polars dataframe
         start (float): start time (s)
         end (float): end time (s)
-        speaker (list): speakers to include (None => all)
+        speakers (list): speakers to include (None => all)
         tier (str): tiers to include (None => all)
     """
     dat1 = dat
-    if speaker is not None:
+    if speakers is not None:
         dat1 = dat1.filter(pl.col('speaker').is_in(speakers))
     if tier is not None:
         dat1 = dat1.filter(pl.col('tier').is_in(tiers))
-    dat1 = dat1.filter((pl.col('start') >= start) & (pl.col('end') <= end))
+    dat1 = dat1.filter((pl.col('start') >= start), (pl.col('end') <= end))
     return dat1
 
 
-# # # # # # # # # #
+def preceding(dat1, dat, skip=['sp', ''], max_sep=500.0):
+    """
+    Get preceding interval in dat, with same filename / speaker / 
+    tier, for each interval in dat1. Skip designated labels and
+    limit search by maximum separation (in ms).
+    """
+    dat = dat.filter(~pl.col('label').is_in(skip))
+    missing = dat.clear(n=1)
+    max_sep_s = max_sep / 1000.0
+
+    dats = []
+    for row in dat1.iter_rows(named=True):
+        _dat = dat.filter( \
+                pl.col('filename') == row['filename'],
+                pl.col('speaker') == row['speaker'],
+                pl.col('tier') == row['tier'],
+                pl.col('end') <= row['start'],
+                (row['start'] - pl.col('end')) <= max_sep_s
+            )
+        if len(_dat) == 0:
+            dats.append(missing)
+        else:
+            dats.append(_dat.tail(1))
+
+    dat0 = pl.concat(dats)
+    return dat0
+
+
+def following(dat1, dat, skip=['sp', ''], max_sep=500.0):
+    """
+    Get following interval in dat, with same filename / speaker /
+    tier, for each interval in dat1. Skip designated labels and
+    limit search by maximum separation (in ms).
+    """
+    dat = dat.filter(~pl.col('label').is_in(skip))
+    missing = dat.clear(n=1)
+    max_sep_s = max_sep / 1000.0
+
+    dats = []
+    for row in dat1.iter_rows(named=True):
+        _dat = dat.filter( \
+                pl.col('filename') == row['filename'],
+                pl.col('speaker') == row['speaker'],
+                pl.col('tier') == row['tier'],
+                pl.col('start') >= row['end'],
+                (row['end'] - pl.col('start')) <= max_sep_s
+            )
+        if len(_dat) == 0:
+            dats.append(missing)
+        else:
+            dats.append(_dat.head(1))
+
+    dat2 = pl.concat(dats)
+    return dat2
+
 
 # FIXME: convert to polars
-
-
-def previous_interval(grid,
-                      interval,
-                      label='label',
-                      speaker='speaker',
-                      skip=['sp', ''],
-                      max_skip_dur=500.0):
-    """
-    Return interval before specified one on the same tier of grid.
-    """
-    return _adjacent_interval(grid,
-                              interval,
-                              label,
-                              speaker,
-                              skip,
-                              max_skip_dur,
-                              direction='before')
-
-
-def following_interval(grid,
-                       interval,
-                       label='label',
-                       speaker='speaker',
-                       skip=['sp', ''],
-                       max_skip_dur=500.0):
-    """
-    Return interval after specified one on the same tier of grid.
-    """
-    return _adjacent_interval(grid,
-                              interval,
-                              label,
-                              speaker,
-                              skip,
-                              max_skip_dur,
-                              direction='after')
-
-
-def _adjacent_interval(grid,
-                       interval,
-                       label='label',
-                       speaker='speaker',
-                       skip=['sp', ''],
-                       max_skip_dur=500.0,
-                       direction=None):
-    """
-    Return interval before/after specified one on the same tier of grid.
-        grid (dataframe)
-        interval: row of grid
-        label (str): key of labels in grid (default = 'label')
-        speaker (str): key of speaker in grid (default = 'speaker')
-        skip (list): skip one short instance of sp/pause/etc. (default = ['sp'])
-        max_skip_dur (ms): do not skip long instances of sp/pause/etc. (default = 500ms)
-    """
-    if direction is None:
-        raise Error('Must specify direction for _adjacent_interval()')
-    idx = interval.name
-
-    # Handle direction and grid edges
-    if direction == 'before':
-        if idx == 0:
-            return None
-        deltas = [-1, -2]
-    if direction == 'after':
-        if idx == grid.index[-1]:
-            return None
-        deltas = [1, 2]
-
-    for delta in deltas:
-        interval2 = grid.iloc[idx + delta]
-        # Require matching tier
-        if interval2['tier'] != interval['tier']:
-            return None
-        # Optionally require matching speaker fields
-        if (speaker is not None) and (interval2[speaker] != interval[speaker]):
-            return None
-        # Skip short pauses, fail on long ones
-        if interval2[label] in skip:
-            if interval2['dur'] > max_skip_dur:
-                return None
-            continue
-        # Return closest non-pause interval
-        else:
-            return interval2
-    return None
 
 
 def speaking_rate_before(grid,
@@ -331,21 +308,36 @@ def speaking_rate_before(grid,
     return speaking_rate
 
 
+# Test.
 def main():
-    fgrid = Path.home(
-    ) / 'Sounds/SCOTUS/fave_align/2013/12-1168_11025.TextGrid'
-    grid = read(fgrid)
-    grid['speaker'] = [re.sub(' -.*', '', x) for x in grid['tier']]
-    grid['tier'] = [re.sub('.*- ', '', x) for x in grid['tier']]
-    grid['word'] = grid['label']
-    interval = grid.iloc[-100]
-    speaking_rate = speaking_rate_before(grid, interval)
-    print(f'{speaking_rate} syllables / second')
-    print(1.0 / speaking_rate * 1000.0)
-    write(grid,
-          Path.home() / 'Desktop/tmp.TextGrid',
-          speaker='speaker',
-          tiers=['word', 'phone'])
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    grid_file = Path.home() / \
+        'Sounds/WhiteHousePressBriefings/data/mfa_out/11⧸20⧸23： Press Briefing by Press Secretary Karine Jean-Pierre [FYZztiGyz4g].TextGrid'
+    grid = read(grid_file)
+
+    # Tokens of 'the'.
+    grid1 = grid.filter( \
+        pl.col('tier') == 'words',
+        pl.col('label') == 'the')
+    print(grid1)
+
+    # Following words.
+    grid2 = following(grid1, grid)
+    print(grid2)
+
+    grid1 = grid1[[
+        'filename', 'speaker', 'tier', 'label', 'start', 'end', 'dur_ms'
+    ]]
+    grid2 = grid2[['speaker', 'tier', 'label', 'start', 'end', 'dur_ms']]
+    grid2.columns = ['_' + x for x in grid2.columns]
+
+    grid12 = pl.concat([grid1, grid2], how='horizontal')
+    print(grid12)
+
+    sns.scatterplot(x='dur_ms', y='_dur_ms', data=grid12)
+    plt.show()
 
 
 if __name__ == '__main__':
