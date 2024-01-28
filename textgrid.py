@@ -275,7 +275,7 @@ def following(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
     return dat2
 
 
-def speaking_rate(dat1, dat, window=1.0, side='before'):
+def speaking_rate(dat1, dat, window=1000.0, side='before'):
     """
     Local speaking rate (vowels/second) in dat before or 
     after each interval in dat1.
@@ -287,28 +287,29 @@ def speaking_rate(dat1, dat, window=1.0, side='before'):
     return None
 
 
-def speaking_rate_before(dat1, dat, window=1.0):
+def speaking_rate_before(dat1, dat, window=1000.0):
     """
     Speaking rate (vowels/second) in dat before 
     each interval in dat1 within specified window.
-        window (s): duration of window (default = 1.0)
+        window (ms): duration of window (default = 1000.0)
     """
     dat = dat.filter( \
         pl.col('tier') == 'phones',
         pl.col('label').str.contains(ARPABET_VOWELS))
 
     val = []
+    window_s = window / 1000.0
     for row in dat1.iter_rows(named=True):
         _dat = dat.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
                 pl.col('end') <= row['start'],
-                (row['start'] - pl.col('start')) <= window)
+                (row['start'] - pl.col('start')) <= window_s)
         n = len(_dat)
         if n == 0:
             val.append(np.nan)
         else:
-            val.append(float(n) / window)
+            val.append(float(n) / window_s)
 
     dat1 = dat1.with_columns( \
         pl.Series(name='rate_before', values=val))
@@ -316,28 +317,29 @@ def speaking_rate_before(dat1, dat, window=1.0):
     return dat1
 
 
-def speaking_rate_after(dat1, dat, window=1.0):
+def speaking_rate_after(dat1, dat, window=1000.0):
     """
     Speaking rate (vowels/second) in dat after 
     each interval in dat1 within specified window.
-        window (s): duration of window (default = 1.0)
+        window (ms): duration of window (default = 1000.0)
     """
     dat = dat.filter( \
         pl.col('tier') == 'phones',
         pl.col('label').str.contains(ARPABET_VOWELS))
 
     val = []
+    window_s = window / 1000.0
     for row in dat1.iter_rows(named=True):
         _dat = dat.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
                 pl.col('start') >= row['end'],
-                (pl.col('end') - row['end']) <= window)
+                (pl.col('end') - row['end']) <= window_s)
         n = len(_dat)
         if n == 0:
             val.append(np.nan)
         else:
-            val.append(float(n) / window)
+            val.append(float(n) / window_s)
 
     dat1 = dat1.with_columns( \
         pl.Series(name='rate_after', values=val))
