@@ -5,9 +5,12 @@ from collections import namedtuple
 import polars as pl
 import tgt
 
-vowel_regex = '^[AEIOUaeiou].[012]$'
-vowel_regex_nostress = '^[AEIOUaeiou].?$'
-mfa_tier_regex = '^(.+) - (phones|words|utterances)$'
+# # # # # # # # # #
+
+# Regexes.
+ARPABET_VOWELS = '^[AEIOUaeiou].?$'
+ARPABET_VOWELS_STRESS = '^[AEIOUaeiou].[012]$'
+MFA_TIERS = '^(.+) - (phones|words|utterances)$'
 
 # # # # # # # # # #
 
@@ -21,14 +24,14 @@ def read(filename, fileEncoding="utf-8"):
     dat = []
     for tier in grid.tiers:
         tier_name = tier.name
-        if re.search(mfa_tier_regex, tier_name):
-            speaker = re.sub(mfa_tier_regex, '\\1', tier_name)
-            tier_name = re.sub(mfa_tier_regex, '\\2', tier_name)
+        if re.search(MFA_TIERS, tier_name):
+            speaker = re.sub(MFA_TIERS, '\\1', tier_name)
+            tier_name = re.sub(MFA_TIERS, '\\2', tier_name)
         else:
             speaker = '<null>'
 
         for interval in tier.annotations:
-            dat.append((speaker,tier_name,  \
+            dat.append((speaker, tier_name,  \
                 interval.text, interval.start_time, interval.end_time))
 
     dat = pl.DataFrame(dat,
@@ -106,22 +109,27 @@ def combine_tiers(dat):
     """
     Combine word and phone tiers within speaker.
     """
-    # Wrangle word tier.
+    # Word tier.
     dat_word = dat \
         .filter(pl.col('tier') == "words") \
         .rename({"label": "word", "start": "word_start",
                  "end": "word_end"}) \
-        .sort(['file', 'speaker', 'word_start'])
-    dat_word = dat_word[['file', 'speaker', 'word', 'word_start', 'word_end']]
+        .sort(['filename', 'speaker', 'word_start'])
+
+    dat_word = dat_word[[
+        'filename', 'speaker', 'word', 'word_start', 'word_end'
+    ]]
 
     # Assign consecutive ids to words.
     dat_word = dat_word.with_columns( \
-        pl.Series(name='word_id', values=list(range(len(dat_word)))))
+        pl.Series(name='word_id', \
+            values=list(range(len(dat_word))))
+        )
 
-    # Wrangle phon tier.
+    # Phone tier.
     dat_phon = dat \
         .filter(pl.col('tier') == "phones") \
-        .sort(['file', 'speaker', 'start'])
+        .sort(['filename', 'speaker', 'start'])
 
     # Assign non-decreasing word ids to phones.
     i = 0
@@ -131,7 +139,7 @@ def combine_tiers(dat):
         # checkme: use filtering instead?
         while i < n:
             phon = dat_phon.row(i, named=True)
-            if phon['file'] != word['file']:
+            if phon['filename'] != word['filename']:
                 break
             if phon['speaker'] != word['speaker']:
                 break
@@ -150,11 +158,18 @@ def combine_tiers(dat):
     # Report phones with missing word ids.
     dat_miss = dat_phon.filter(pl.col('word_id') == -1)
     if len(dat_miss) > 0:
-        print(f'Phones missing word ids ({len(dat_miss)})')
+        print(f'Phones missing word ids ({len(dat_miss)}):')
         print(dat_miss)
 
     # Merge words and phones on word ids.
-    ret = dat_phon.join(dat_word, on=['file', 'speaker', 'word_id'])
+    #ret = dat_phon.join(dat_word, \
+    #    on=['filename', 'speaker', 'word_id'])
+    ret = dat_word.join(dat_phon, \
+        on=['filename', 'speaker', 'word_id'])
+
+    # Reorder tiers.
+    #ret = ret[['filename', 'speaker', 'word_id', 'word', 'word_start', 'word_end', '']]
+
     return ret
 
 
@@ -191,10 +206,14 @@ def intervals_between(dat, start, end, speakers=None, tier=None):
     """
     dat1 = dat
     if speakers is not None:
-        dat1 = dat1.filter(pl.col('speaker').is_in(speakers))
+        dat1 = dat1.filter( \
+            pl.col('speaker').is_in(speakers))
     if tier is not None:
-        dat1 = dat1.filter(pl.col('tier').is_in(tiers))
-    dat1 = dat1.filter((pl.col('start') >= start), (pl.col('end') <= end))
+        dat1 = dat1.filter( \
+            pl.col('tier').is_in(tiers))
+    dat1 = dat1.filter( \
+        (pl.col('start') >= start),
+        (pl.col('end') <= end))
     return dat1
 
 
@@ -300,7 +319,7 @@ def speaking_rate_before(grid,
     if len(phons_contig) == 0:
         return None
     vowels_contig = phons_contig[(
-        phons_contig['label'].str.contains(vowel_regex))]
+        phons_contig['label'].str.contains(ARPABET_VOWELS))]
     if len(vowels_contig) == 0:
         return None
     speaking_rate = float(len(vowels_contig)) / float(window_dur)
