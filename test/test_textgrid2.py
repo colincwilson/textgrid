@@ -1,6 +1,8 @@
 import sys
 import polars as pl
 from pathlib import Path
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 import textgrid
 
@@ -29,11 +31,15 @@ grid2 = textgrid.following(grid1, grid)
 print(grid2)
 
 # Speaking rate before.
-grid3 = textgrid.speaking_rate(grid1, grid, side='before')
+grid3 = textgrid.speaking_rate(grid, grid, side='before')
 print(grid3)
 
 # Speaking rate after.
-grid4 = textgrid.speaking_rate(grid1, grid, side='after')
+grid4 = textgrid.speaking_rate(grid3, grid, side='after')
+print(len(grid4))
 print(grid4)
 
-#print(list(zip(grid0['label'], grid1['label'], grid2['label'])))
+grid4.write_csv('~/Downloads/tmp.csv')
+
+sns.relplot(grid4, x='rate_before', y='rate_after')
+plt.show()
