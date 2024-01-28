@@ -8,8 +8,8 @@ import tgt
 # # # # # # # # # #
 
 # Regexes.
-ARPABET_VOWELS = '^[AEIOUaeiou].?$'
-ARPABET_VOWELS_STRESS = '^[AEIOUaeiou].[012]$'
+ARPABET_VOWELS = '^[AEIOUaeiou].?[012]?$'
+#ARPABET_VOWELS_STRESS = '^[AEIOUaeiou].[012]$'
 MFA_TIERS = '^(.+) - (phones|words|utterances)$'
 
 # # # # # # # # # #
@@ -107,7 +107,7 @@ def _make_tier(dat, speaker, tier):
 
 def combine_tiers(dat):
     """
-    Combine word and phone tiers within speaker.
+    Combine word and phone tiers.
     """
     # Word tier.
     dat_word = dat \
@@ -123,8 +123,7 @@ def combine_tiers(dat):
     # Assign consecutive ids to words.
     dat_word = dat_word.with_columns( \
         pl.Series(name='word_id', \
-            values=list(range(len(dat_word))))
-        )
+            values=list(range(len(dat_word)))))
 
     # Phone tier.
     dat_phon = dat \
@@ -162,13 +161,8 @@ def combine_tiers(dat):
         print(dat_miss)
 
     # Merge words and phones on word ids.
-    #ret = dat_phon.join(dat_word, \
-    #    on=['filename', 'speaker', 'word_id'])
     ret = dat_word.join(dat_phon, \
         on=['filename', 'speaker', 'word_id'])
-
-    # Reorder tiers.
-    #ret = ret[['filename', 'speaker', 'word_id', 'word', 'word_start', 'word_end', '']]
 
     return ret
 
@@ -193,7 +187,7 @@ def interval_at(dat, timepoint, speakers=None, tiers=None):
     return dat1
 
 
-def intervals_between(dat, start, end, speakers=None, tier=None):
+def intervals_between(dat, start, end, speakers=None, tiers=None):
     """
     Data frame of intervals between timepoints (inclusive) 
     for all speakers or specified speakers, on all tiers or 
@@ -202,7 +196,7 @@ def intervals_between(dat, start, end, speakers=None, tier=None):
         start (float): start time (s)
         end (float): end time (s)
         speakers (list): speakers to include (None => all)
-        tier (str): tiers to include (None => all)
+        tiers (str): tiers to include (None => all)
     """
     dat1 = dat
     if speakers is not None:
@@ -217,13 +211,17 @@ def intervals_between(dat, start, end, speakers=None, tier=None):
     return dat1
 
 
-def preceding(dat1, dat, skip=['sp', ''], max_sep=500.0):
+def preceding(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
     """
-    Get preceding interval in dat, with same filename / speaker / 
-    tier, for each interval in dat1. Skip designated labels and
-    limit search by maximum separation (in ms).
+    Get preceding interval in dat, with same filename/speaker/ 
+    tier, for each interval in dat1. Skip designated labels, 
+    include only labels that match pattern, and limit search 
+    by maximum separation (ms).
     """
-    dat = dat.filter(~pl.col('label').is_in(skip))
+    dat = dat.filter( \
+        ~pl.col('label').is_in(skip),
+        pl.col('label').str.contains(pattern))
+
     missing = dat.clear(n=1)
     max_sep_s = max_sep / 1000.0
 
@@ -245,13 +243,17 @@ def preceding(dat1, dat, skip=['sp', ''], max_sep=500.0):
     return dat0
 
 
-def following(dat1, dat, skip=['sp', ''], max_sep=500.0):
+def following(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
     """
-    Get following interval in dat, with same filename / speaker /
-    tier, for each interval in dat1. Skip designated labels and
-    limit search by maximum separation (in ms).
+    Get following interval in dat, with same filename/speaker/ 
+    tier, for each interval in dat1. Skip designated labels, 
+    include only labels that match pattern, and limit search 
+    by maximum separation (ms).
     """
-    dat = dat.filter(~pl.col('label').is_in(skip))
+    dat = dat.filter( \
+        ~pl.col('label').is_in(skip),
+        pl.col('label').str.contains(pattern))
+
     missing = dat.clear(n=1)
     max_sep_s = max_sep / 1000.0
 
@@ -273,58 +275,74 @@ def following(dat1, dat, skip=['sp', ''], max_sep=500.0):
     return dat2
 
 
-# FIXME: convert to polars
-
-
-def speaking_rate_before(grid,
-                         interval,
-                         word_tier='word',
-                         phone_tier='phone',
-                         window=1000.0):
+def speaking_rate(dat1, dat, window=1.0, side='before'):
     """
-    Speaking rate (syllable / second) in specified window prior to interval.
-        label (str): key of word labels in grid (default = 'word')
-        window (ms): duration of window (default = 1000.0)
+    Local speaking rate (vowels/second) in dat before or 
+    after each interval in dat1.
     """
-    # Words (from all speakers) in window prior to interval.
-    start = interval['start'] - window / 1000.0
-    if start < 0.0:
-        start = 0.0
-    end = interval['start']
-    words = intervals_between(grid, start, end, tier=word_tier)
-    nwords = len(words)
-    if nwords == 0:
-        return None
+    if side == 'before':
+        return speaking_rate_before(dat1, dat, window)
+    if side == 'after':
+        return speaking_rate_after(dat1, dat, window)
+    return None
 
-    # Contiguous words with same speaker as interval.
-    speaker = interval['speaker']
-    words_contig = []
-    for i in range(nwords - 1, -1, -1):
-        word = words.iloc[i]
-        if word['speaker'] != speaker:
-            break
-        words_contig.append(word)
-    if len(words_contig) == 0:
-        return None
-    words_contig.reverse()
 
-    # Window duration and speaking rate.
-    window_start = words_contig[0]['start']
-    window_end = words_contig[-1]['end']
-    window_dur = (window_end - window_start)  # seconds
-    phons_contig = intervals_between(grid,
-                                     window_start,
-                                     window_end,
-                                     tier=phone_tier)
-    if len(phons_contig) == 0:
-        return None
-    vowels_contig = phons_contig[(
-        phons_contig['label'].str.contains(ARPABET_VOWELS))]
-    if len(vowels_contig) == 0:
-        return None
-    speaking_rate = float(len(vowels_contig)) / float(window_dur)
+def speaking_rate_before(dat1, dat, window=1.0):
+    """
+    Speaking rate (vowels/second) in dat before 
+    each interval in dat1 within specified window.
+        window (s): duration of window (default = 1.0)
+    """
+    dat = dat.filter( \
+        pl.col('tier') == 'phones',
+        pl.col('label').str.contains(ARPABET_VOWELS))
 
-    return speaking_rate
+    val = []
+    for row in dat1.iter_rows(named=True):
+        _dat = dat.filter( \
+                pl.col('filename') == row['filename'],
+                pl.col('speaker') == row['speaker'],
+                pl.col('end') <= row['start'],
+                (row['start'] - pl.col('start')) <= window)
+        n = len(_dat)
+        if n == 0:
+            val.append(np.nan)
+        else:
+            val.append(float(n) / window)
+
+    dat1 = dat1.with_columns( \
+        pl.Series(name='rate_before', values=val))
+
+    return dat1
+
+
+def speaking_rate_after(dat1, dat, window=1.0):
+    """
+    Speaking rate (vowels/second) in dat after 
+    each interval in dat1 within specified window.
+        window (s): duration of window (default = 1.0)
+    """
+    dat = dat.filter( \
+        pl.col('tier') == 'phones',
+        pl.col('label').str.contains(ARPABET_VOWELS))
+
+    val = []
+    for row in dat1.iter_rows(named=True):
+        _dat = dat.filter( \
+                pl.col('filename') == row['filename'],
+                pl.col('speaker') == row['speaker'],
+                pl.col('start') >= row['end'],
+                (pl.col('end') - row['end']) <= window)
+        n = len(_dat)
+        if n == 0:
+            val.append(np.nan)
+        else:
+            val.append(float(n) / window)
+
+    dat1 = dat1.with_columns( \
+        pl.Series(name='rate_after', values=val))
+
+    return dat1
 
 
 # Test.
