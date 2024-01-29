@@ -6,7 +6,6 @@ scotus_dir = Path.home() / f'Sounds/SCOTUS/mfa_align/{year}'
 scotus_grids = list(scotus_dir.glob('*.TextGrid'))
 
 grid = textgrid.read(str(scotus_grids[0]))
-print(grid.head())
 
 grid = grid.sort(['start'])
 print(grid.head())

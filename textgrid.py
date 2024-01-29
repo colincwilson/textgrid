@@ -45,13 +45,18 @@ def read(filename, fileEncoding="utf-8", verbose=True):
     ]]
     dat = dat.sort(['speaker', 'tier', 'start', 'end'])
 
-    speakers = dat['speaker'].unique().to_list()
-    tiers = dat['tier'].unique().to_list()
-
     if verbose:
-        print(f'Read textgrid {filename}\n'
+        speakers = dat['speaker'].unique().to_list()
+        tiers = dat['tier'].unique().to_list()
+        n = len(dat)
+
+        print(f'{"="*10}\n'
+              f'Read textgrid {filename}\n'
               f'- speakers: {speakers}\n'
-              f'- tiers: {tiers}\n')
+              f'- tiers: {tiers}\n'
+              f'- rows: {n}')
+        print(dat.head())
+        print()
 
     return dat
 
