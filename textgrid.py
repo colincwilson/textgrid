@@ -10,12 +10,12 @@ import tgt
 # Regexes.
 ARPABET_VOWELS = '^[AEIOUaeiou].?[012]?$'
 #ARPABET_VOWELS_STRESS = '^[AEIOUaeiou].[012]$'
-MFA_TIERS = '^(.+) - (phones|words|utterances)$'
+MFA_TIERS = '^(.+?)( - utterance)? - ((phone|word|utterance)s?)$'
 
 # # # # # # # # # #
 
 
-def read(filename, fileEncoding="utf-8"):
+def read(filename, fileEncoding="utf-8", verbose=True):
     """
     Read TextGrid into polars data frame.
     """
@@ -26,7 +26,7 @@ def read(filename, fileEncoding="utf-8"):
         tier_name = tier.name
         if re.search(MFA_TIERS, tier_name):
             speaker = re.sub(MFA_TIERS, '\\1', tier_name)
-            tier_name = re.sub(MFA_TIERS, '\\2', tier_name)
+            tier_name = re.sub(MFA_TIERS, '\\3', tier_name)
         else:
             speaker = '<null>'
 
@@ -44,6 +44,14 @@ def read(filename, fileEncoding="utf-8"):
         'filename', 'speaker', 'tier', 'label', 'start', 'end', 'dur_ms'
     ]]
     dat = dat.sort(['speaker', 'tier', 'start', 'end'])
+
+    speakers = dat['speaker'].unique().to_list()
+    tiers = dat['tier'].unique().to_list()
+
+    if verbose:
+        print(f'Read textgrid {filename}\n'
+              f'- speakers: {speakers}\n'
+              f'- tiers: {tiers}\n')
 
     return dat
 
@@ -167,7 +175,7 @@ def combine_tiers(dat):
     return ret
 
 
-def interval_at(dat, timepoint, speakers=None, tiers=None):
+def intervals_at(dat, timepoint, speakers=None, tiers=None):
     """
     Data frame of intervals overlapping timepoint (inclusive) 
     for all speakers or specified speakers, on all tiers or 
@@ -180,7 +188,7 @@ def interval_at(dat, timepoint, speakers=None, tiers=None):
     dat1 = dat
     if speakers is not None:
         dat1 = dat1.filter(pl.col('speaker').is_in(speakers))
-    if tiers is not none:
+    if tiers is not None:
         dat1 = dat1.filter(pl.col('tier').is_in(tiers))
     dat1 = dat1.filter((pl.col('start') <= timepoint),
                        (pl.col('end') >= timepoint))
@@ -353,7 +361,7 @@ def main():
     import seaborn as sns
 
     grid_file = Path.home() / \
-        'Sounds/WhiteHousePressBriefings/data/mfa_out/11⧸20⧸23： Press Briefing by Press Secretary Karine Jean-Pierre [FYZztiGyz4g].TextGrid'
+        'Sounds/WhiteHousePressBriefings/data2/mfa_out/11⧸20⧸23： Press Briefing by Press Secretary Karine Jean-Pierre [FYZztiGyz4g].TextGrid'
     grid = read(grid_file)
 
     # Tokens of 'the'.
