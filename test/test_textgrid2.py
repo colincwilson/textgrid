@@ -7,7 +7,7 @@ import seaborn as sns
 import textgrid
 
 grid_file = Path.home() / \
-    'Sounds/WhiteHousePressBriefings/data/mfa_align/11⧸20⧸23： Press Briefing by Press Secretary Karine Jean-Pierre [FYZztiGyz4g].TextGrid'
+    'Sounds/WhiteHousePressBriefings/data2/mfa_align/11⧸20⧸23： Press Briefing by Press Secretary Karine Jean-Pierre [FYZztiGyz4g].TextGrid'
 
 grid = textgrid.read(grid_file)
 
