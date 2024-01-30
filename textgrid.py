@@ -247,6 +247,7 @@ def preceding(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
                 pl.col('end') <= row['start'],
                 (row['start'] - pl.col('end')) <= max_sep_s
             )
+        # Note: 'null' row values result in empty _dat.
         if len(_dat) == 0:
             dats.append(missing)
         else:
@@ -279,6 +280,7 @@ def following(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
                 pl.col('start') >= row['end'],
                 (row['end'] - pl.col('start')) <= max_sep_s
             )
+        # Note: 'null' row values result in empty _dat.
         if len(_dat) == 0:
             dats.append(missing)
         else:

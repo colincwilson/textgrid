@@ -64,7 +64,7 @@ dat_the = textgrid.speaking_rate( \
 # print(dat_the.columns)
 # print(len(dat_the))
 
-# Merge with combo.
+# Merge with words+phones combo.
 dat_the = dat_the \
     .rename({'label': 'word', 'start': 'word_start', 'end': 'word_end', 'dur_ms': 'word_dur_ms'}) \
     .drop('tier')
@@ -90,19 +90,19 @@ print(len(dat_the))
 
 dat_the.write_csv('~/Downloads/tmp.csv')
 
-sys.exit(0)
+# sys.exit(0)
 
-print(dat_the.select(pl.corr('SUBTLWF', 'dur_ms')))
-sns.relplot(dat_the, x='SUBTLWF', y='dur_ms')
-plt.show()
+# print(dat_the.select(pl.corr('SUBTLWF', 'dur_ms')))
+# sns.relplot(dat_the, x='SUBTLWF', y='dur_ms')
+# plt.show()
 
-print(dat_the)
-print(dat_the.columns)
+# print(dat_the)
+# print(dat_the.columns)
 
-print(dat_the['phone'].value_counts())
+# print(dat_the['phone'].value_counts())
 
-print(dat_the[[
-    'word', 'word_prev2', 'word_prev1', 'word_next1', 'word_next2', 'phone'
-]].head())
+# print(dat_the[[
+#     'word', 'word_prev2', 'word_prev1', 'word_next1', 'word_next2', 'phone'
+# ]].head())
 
-#print(dat_the.filter(pl.col('word_prev1') == 'of'))
+# #print(dat_the.filter(pl.col('word_prev1') == 'of'))
