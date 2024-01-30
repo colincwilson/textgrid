@@ -50,8 +50,7 @@ def read(filename, fileEncoding="utf-8", verbose=True):
         tiers = dat['tier'].unique().to_list()
         n = len(dat)
 
-        print(f'{"="*10}\n'
-              f'Read textgrid {filename}\n'
+        print(f'\nRead textgrid {filename}\n'
               f'- speakers: {speakers}\n'
               f'- tiers: {tiers}\n'
               f'- rows: {n}')
