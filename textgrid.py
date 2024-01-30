@@ -123,14 +123,11 @@ def combine_tiers(dat):
     """
     # Word tier.
     dat_word = dat \
-        .filter(pl.col('tier') == "words") \
-        .rename({"label": "word", "start": "word_start",
-                 "end": "word_end"}) \
+        .filter(pl.col('tier') == 'words') \
+        .rename({'label': 'word', 'start': 'word_start',
+        'end': 'word_end', 'dur_ms': 'word_dur_ms'}) \
+        .drop(["tier", "label"]) \
         .sort(['filename', 'speaker', 'word_start'])
-
-    dat_word = dat_word[[
-        'filename', 'speaker', 'word', 'word_start', 'word_end'
-    ]]
 
     # Assign consecutive ids to words.
     dat_word = dat_word.with_columns( \
@@ -140,6 +137,8 @@ def combine_tiers(dat):
     # Phone tier.
     dat_phon = dat \
         .filter(pl.col('tier') == "phones") \
+        .rename({'label': 'phone'}) \
+        .drop('tier') \
         .sort(['filename', 'speaker', 'start'])
 
     # Assign non-decreasing word ids to phones.
@@ -173,8 +172,10 @@ def combine_tiers(dat):
         print(dat_miss)
 
     # Merge words and phones on word ids.
-    ret = dat_word.join(dat_phon, \
-        on=['filename', 'speaker', 'word_id'])
+    ret = dat_word \
+        .join(dat_phon, \
+            on=['filename', 'speaker', 'word_id']) \
+        .drop('word_id')
 
     return ret
 
@@ -226,9 +227,9 @@ def intervals_between(dat, start, end, speakers=None, tiers=None):
 def preceding(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
     """
     Get preceding interval in dat, with same filename/speaker/ 
-    tier, for each interval in dat1. Skip designated labels, 
-    include only labels that match pattern, and limit search 
-    by maximum separation (ms).
+    tier, for each interval (row) in dat1. Skip designated 
+    labels, include only labels that match pattern, and limit 
+    search by maximum separation (ms).
     """
     dat = dat.filter( \
         ~pl.col('label').is_in(skip),
@@ -258,9 +259,9 @@ def preceding(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
 def following(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
     """
     Get following interval in dat, with same filename/speaker/ 
-    tier, for each interval in dat1. Skip designated labels, 
-    include only labels that match pattern, and limit search 
-    by maximum separation (ms).
+    tier, for each interval (row) in dat1. Skip designated 
+    labels, include only labels that match pattern, and limit 
+    search by maximum separation (ms).
     """
     dat = dat.filter( \
         ~pl.col('label').is_in(skip),
@@ -290,7 +291,7 @@ def following(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
 def speaking_rate(dat1, dat, window=1000.0, side='before'):
     """
     Local speaking rate (vowels/second) in dat before or 
-    after each interval in dat1.
+    after each interval (row) in dat1.
     """
     if side == 'before':
         return speaking_rate_before(dat1, dat, window)
@@ -301,8 +302,8 @@ def speaking_rate(dat1, dat, window=1000.0, side='before'):
 
 def speaking_rate_before(dat1, dat, window=1000.0):
     """
-    Speaking rate (vowels/second) in dat before 
-    each interval in dat1 within specified window.
+    Speaking rate (vowels/second) in dat before each 
+    interval (row) in dat1 within specified window.
         window (ms): duration of window (default = 1000.0)
     """
     dat = dat.filter( \
@@ -331,8 +332,8 @@ def speaking_rate_before(dat1, dat, window=1000.0):
 
 def speaking_rate_after(dat1, dat, window=1000.0):
     """
-    Speaking rate (vowels/second) in dat after 
-    each interval in dat1 within specified window.
+    Speaking rate (vowels/second) in dat after each
+    interval (row) in dat1 within specified window.
         window (ms): duration of window (default = 1000.0)
     """
     dat = dat.filter( \
