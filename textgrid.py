@@ -224,63 +224,76 @@ def intervals_between(dat, start, end, speakers=None, tiers=None):
     return dat1
 
 
-def preceding(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
+def preceding(dat1, dat, \
+    tier=None, skip=['sp', ''], pattern='', max_sep=500.0):
     """
-    Get preceding interval in dat, with same filename/speaker/ 
-    tier, for each interval (row) in dat1. Skip designated 
-    labels, include only labels that match pattern, and limit 
-    search by maximum separation (ms).
+    Get closest preceding interval (row) in dat with the same 
+    filename, same speaker, and (by default) same tier for each 
+    interval (row) in dat1. Optionally specify tier of matches. 
+    Skip designated labels, include only labels that match 
+    pattern, and limit search by maximum separation (ms).
     """
     dat = dat.filter( \
         ~pl.col('label').is_in(skip),
         pl.col('label').str.contains(pattern))
 
-    missing = dat.clear(n=1)
-    max_sep_s = max_sep / 1000.0
+    if tier is not None:
+        dat = dat.filter(pl.col('tier') == tier)
 
     dats = []
+    missing = dat.clear(n=1)
+    max_sep_s = max_sep / 1000.0
     for row in dat1.iter_rows(named=True):
+        # Note: 'null' row values result in empty _dat.
         _dat = dat.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
-                pl.col('tier') == row['tier'],
                 pl.col('end') <= row['start'],
                 (row['start'] - pl.col('end')) <= max_sep_s
             )
-        # Note: 'null' row values result in empty _dat.
+        if tier is None:
+            _dat = _dat.filter(pl.col('tier') == row['tier'])
+
         if len(_dat) == 0:
             dats.append(missing)
         else:
             dats.append(_dat.tail(1))
 
-    dat0 = pl.concat(dats)
-    return dat0
+    ret = pl.concat(dats)
+    return ret
 
 
-def following(dat1, dat, skip=['sp', ''], pattern='', max_sep=500.0):
+def following(dat1, dat, \
+    tier=None, skip=['sp', ''], pattern='', max_sep=500.0):
     """
-    Get following interval in dat, with same filename/speaker/ 
-    tier, for each interval (row) in dat1. Skip designated 
-    labels, include only labels that match pattern, and limit 
-    search by maximum separation (ms).
+    Get closest following interval (row) in dat with the same 
+    filename, same speaker, and (by default) same tier for each 
+    interval (row) in dat1. Optionally specify tier of matches. 
+    Skip designated labels, include only labels that match 
+    pattern, and limit search by maximum separation (ms).
     """
     dat = dat.filter( \
         ~pl.col('label').is_in(skip),
         pl.col('label').str.contains(pattern))
+
+    if tier is not None:
+        dat = dat.filter(pl.col('tier') == tier)
 
     missing = dat.clear(n=1)
     max_sep_s = max_sep / 1000.0
 
     dats = []
     for row in dat1.iter_rows(named=True):
+        # Note: 'null' row values result in empty _dat.
         _dat = dat.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
-                pl.col('tier') == row['tier'],
                 pl.col('start') >= row['end'],
                 (row['end'] - pl.col('start')) <= max_sep_s
             )
-        # Note: 'null' row values result in empty _dat.
+        if tier is None:
+            _dat = _dat.filter(pl.col('tier') == row['tier'])
+
         if len(_dat) == 0:
             dats.append(missing)
         else:
