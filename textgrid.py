@@ -43,7 +43,7 @@ def read(filename, fileEncoding="utf-8", verbose=True):
     dat = dat[[
         'filename', 'speaker', 'tier', 'label', 'start', 'end', 'dur_ms'
     ]]
-    dat = dat.sort(['speaker', 'tier', 'start', 'end'])
+    dat = dat.sort(['start', 'speaker'])
 
     if verbose:
         speakers = dat['speaker'].unique().to_list()
