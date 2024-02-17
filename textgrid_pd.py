@@ -152,7 +152,8 @@ def _make_tier(dat, speaker, tier):
     tier = tgt.core.IntervalTier(name=tier_name)
     for i, row in dat.iterrows():
         try:
-            interval = tgt.core.Interval(row['start'], row['end'], row['label'])
+            interval = tgt.core.Interval(row['start'], row['end'],
+                                         row['label'])
             tier.add_interval(interval)
         except:
             print(f'Error creating interval from {row}')
@@ -208,8 +209,13 @@ def previous_interval(grid,
     """
     Return interval before specified one on the same tier of grid.
     """
-    return _adjacent_interval(
-        grid, interval, label, speaker, skip, max_skip_dur, direction='before')
+    return _adjacent_interval(grid,
+                              interval,
+                              label,
+                              speaker,
+                              skip,
+                              max_skip_dur,
+                              direction='before')
 
 
 def following_interval(grid,
@@ -221,8 +227,13 @@ def following_interval(grid,
     """
     Return interval after specified one on the same tier of grid.
     """
-    return _adjacent_interval(
-        grid, interval, label, speaker, skip, max_skip_dur, direction='after')
+    return _adjacent_interval(grid,
+                              interval,
+                              label,
+                              speaker,
+                              skip,
+                              max_skip_dur,
+                              direction='after')
 
 
 def _adjacent_interval(grid,
@@ -310,8 +321,10 @@ def speaking_rate_before(grid,
     window_start = words_contig[0]['start']
     window_end = words_contig[-1]['end']
     window_dur = (window_end - window_start)  # seconds
-    phons_contig = intervals_between(
-        grid, window_start, window_end, tier=phone_tier)
+    phons_contig = intervals_between(grid,
+                                     window_start,
+                                     window_end,
+                                     tier=phone_tier)
     if len(phons_contig) == 0:
         return None
     vowels_contig = phons_contig[(
@@ -324,7 +337,8 @@ def speaking_rate_before(grid,
 
 
 def main():
-    fgrid = Path.home() / 'Sounds/SCOTUS/fave_align/2013/12-1168_11025.TextGrid'
+    fgrid = Path.home(
+    ) / 'Sounds/SCOTUS/fave_align/2013/12-1168_11025.TextGrid'
     grid = read(fgrid)
     grid['speaker'] = [re.sub(' -.*', '', x) for x in grid['tier']]
     grid['tier'] = [re.sub('.*- ', '', x) for x in grid['tier']]
@@ -333,11 +347,10 @@ def main():
     speaking_rate = speaking_rate_before(grid, interval)
     print(f'{speaking_rate} syllables / second')
     print(1.0 / speaking_rate * 1000.0)
-    write(
-        grid,
-        Path.home() / 'Desktop/tmp.TextGrid',
-        speaker='speaker',
-        tiers=['word', 'phone'])
+    write(grid,
+          Path.home() / 'Desktop/tmp.TextGrid',
+          speaker='speaker',
+          tiers=['word', 'phone'])
 
 
 if __name__ == '__main__':

@@ -51,9 +51,9 @@ def read(filename, fileEncoding="utf-8", verbose=True):
         n = len(dat)
 
         print(f'\nRead textgrid {filename}\n'
-              f'- speakers: {speakers}\n'
-              f'- tiers: {tiers}\n'
-              f'- rows: {n}')
+              f'* Speakers: {speakers}\n'
+              f'* Tiers: {tiers}\n'
+              f'* Rows: {n}')
         print(dat.head())
         print()
 
@@ -210,6 +210,8 @@ def intervals_between(dat, start, end, speakers=None, tiers=None):
         end (float): end time (s)
         speakers (list): speakers to include (None => all)
         tiers (str): tiers to include (None => all)
+
+
     """
     dat1 = dat
     if speakers is not None:
@@ -233,31 +235,36 @@ def preceding(dat1, dat, \
     Skip designated labels, include only labels that match 
     pattern, and limit search by maximum separation (ms).
     """
+    if tier is not None:
+        dat = dat.filter(pl.col('tier') == tier)
+
     dat = dat.filter( \
         ~pl.col('label').is_in(skip),
         pl.col('label').str.contains(pattern))
-
-    if tier is not None:
-        dat = dat.filter(pl.col('tier') == tier)
 
     dats = []
     missing = dat.clear(n=1)
     max_sep_s = max_sep / 1000.0
     for row in dat1.iter_rows(named=True):
-        # Note: 'null' row values result in empty _dat.
-        _dat = dat.filter( \
-                pl.col('filename') == row['filename'],
-                pl.col('speaker') == row['speaker'],
-                pl.col('end') <= row['start'],
-                (row['start'] - pl.col('end')) <= max_sep_s
-            )
-        if tier is None:
-            _dat = _dat.filter(pl.col('tier') == row['tier'])
+        if (row['filename'] is None) or (row['speaker'] is None) \
+            or (row['tier'] is None) or (row['start'] is None):
+            dats.append(missing)
+            continue
 
-        if len(_dat) == 0:
+        dat_ = dat.filter( \
+            pl.col('filename') == row['filename'],
+            pl.col('speaker') == row['speaker'],
+            pl.col('end') <= row['start'],
+            pl.col('end') >= (row['start'] - max_sep_s))
+
+        if tier is None:
+            dat_ = dat_.filter( \
+                pl.col('tier') == row['tier'])
+
+        if len(dat_) == 0:
             dats.append(missing)
         else:
-            dats.append(_dat.tail(1))
+            dats.append(dat_.tail(1))
 
     ret = pl.concat(dats)
     return ret
@@ -272,35 +279,45 @@ def following(dat1, dat, \
     Skip designated labels, include only labels that match 
     pattern, and limit search by maximum separation (ms).
     """
+    if tier is not None:
+        dat = dat.filter(pl.col('tier') == tier)
+
     dat = dat.filter( \
         ~pl.col('label').is_in(skip),
         pl.col('label').str.contains(pattern))
 
-    if tier is not None:
-        dat = dat.filter(pl.col('tier') == tier)
-
     missing = dat.clear(n=1)
     max_sep_s = max_sep / 1000.0
-
     dats = []
     for row in dat1.iter_rows(named=True):
-        # Note: 'null' row values result in empty _dat.
-        _dat = dat.filter( \
-                pl.col('filename') == row['filename'],
-                pl.col('speaker') == row['speaker'],
-                pl.col('start') >= row['end'],
-                (row['end'] - pl.col('start')) <= max_sep_s
-            )
-        if tier is None:
-            _dat = _dat.filter(pl.col('tier') == row['tier'])
+        if (row['filename'] is None) or (row['speaker'] is None) \
+            or (row['tier'] is None) or (row['end'] is None):
+            dats.append(missing)
+            continue
 
-        if len(_dat) == 0:
+        dat_ = dat.filter( \
+            pl.col('filename') == row['filename'],
+            pl.col('speaker') == row['speaker'],
+            pl.col('start') >= row['end'],
+            pl.col('start') <= (row['end'] + max_sep_s))
+
+        if tier is None:
+            dat_ = dat_.filter(pl.col('tier') == row['tier'])
+
+        if len(dat_) == 0:
             dats.append(missing)
         else:
-            dats.append(_dat.head(1))
+            dats.append(dat_.head(1))
 
-    dat2 = pl.concat(dats)
-    return dat2
+    ret = pl.concat(dats)
+    return ret
+
+
+# Alias for following.
+succeeding = following
+# def succeeding(*args, **kwargs):
+#     """ Alias for following(). """
+#     return following(*args, **kwargs)
 
 
 def speaking_rate(dat1, dat, window=1000.0, side='before'):
@@ -328,12 +345,12 @@ def speaking_rate_before(dat1, dat, window=1000.0):
     val = []
     window_s = window / 1000.0
     for row in dat1.iter_rows(named=True):
-        _dat = dat.filter( \
+        dat_ = dat.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
                 pl.col('end') <= row['start'],
                 (row['start'] - pl.col('start')) <= window_s)
-        n = len(_dat)
+        n = len(dat_)
         if n == 0:
             val.append(np.nan)
         else:
@@ -358,12 +375,12 @@ def speaking_rate_after(dat1, dat, window=1000.0):
     val = []
     window_s = window / 1000.0
     for row in dat1.iter_rows(named=True):
-        _dat = dat.filter( \
+        dat_ = dat.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
                 pl.col('start') >= row['end'],
                 (pl.col('end') - row['end']) <= window_s)
-        n = len(_dat)
+        n = len(dat_)
         if n == 0:
             val.append(np.nan)
         else:
