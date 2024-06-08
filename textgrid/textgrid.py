@@ -34,15 +34,15 @@ def read(filename, fileEncoding="utf-8", verbose=True):
             dat.append((speaker, tier_name,  \
                 interval.text, interval.start_time, interval.end_time))
 
-    dat = pl.DataFrame(dat,
-                       schema=['speaker', 'tier', 'label', 'start', 'end'])
+    dat = pl.DataFrame( \
+        dat, schema=['speaker', 'tier', 'label', 'start', 'end'])
     dat = dat.with_columns( \
         filename=pl.lit(filename),
         dur_ms=1000.0*(pl.col('end') - pl.col('start')))
 
-    dat = dat[[
-        'filename', 'speaker', 'tier', 'label', 'start', 'end', 'dur_ms'
-    ]]
+    dat = dat[[ \
+        'filename', 'speaker', 'tier', 'label',
+        'start', 'end', 'dur_ms']]
     dat = dat.sort(['start', 'speaker'])
 
     if verbose:
@@ -50,7 +50,7 @@ def read(filename, fileEncoding="utf-8", verbose=True):
         tiers = dat['tier'].unique().to_list()
         n = len(dat)
 
-        print(f'\nRead textgrid {filename}\n'
+        print(f'\nTextgrid {filename}\n'
               f'* Speakers: {speakers}\n'
               f'* Tiers: {tiers}\n'
               f'* Rows: {n}')
@@ -80,7 +80,8 @@ def write(dat, filename, speakers=None, tiers=None):
         tier.end_time = end_time
         grid.add_tier(tier)
 
-    tgt.io.write_to_file(grid, filename, format='long')  # checkme: format
+    # checkme: format
+    tgt.io.write_to_file(grid, filename, format='long')
     return grid
 
 
@@ -175,7 +176,8 @@ def combine_tiers(dat):
     ret = dat_word \
         .join(dat_phon, \
             on=['filename', 'speaker', 'word_id']) \
-        .drop('word_id')
+        .drop('word_id') \
+        .sort('word_start')
 
     return ret
 
