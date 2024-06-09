@@ -1,7 +1,10 @@
+# Praat textgrids represented as polars dataframes and networkx graphs.
+
 import re, sys
+import networkx as nx
 import numpy as np
 from pathlib import Path
-from collections import namedtuple
+#from collections import namedtuple
 import polars as pl
 import tgt
 
@@ -52,9 +55,8 @@ def read(filename, fileEncoding="utf-8", verbose=True):
 
         print(f'\nTextgrid {filename}\n'
               f'* Speakers: {speakers}\n'
-              f'* Tiers: {tiers}\n'
-              f'* Rows: {n}')
-        print(dat.head())
+              f'* Tiers: {tiers}\n')
+        print(f'dat {dat}')
         print()
 
     return dat
@@ -127,8 +129,8 @@ def combine_tiers(dat):
         .filter(pl.col('tier') == 'words') \
         .rename({'label': 'word', 'start': 'word_start',
         'end': 'word_end', 'dur_ms': 'word_dur_ms'}) \
-        .drop(["tier", "label"]) \
-        .sort(['filename', 'speaker', 'word_start'])
+        .drop(['tier', 'label']) \
+        .sort(['filename', 'word_start'])
 
     # Assign consecutive ids to words.
     dat_word = dat_word.with_columns( \
@@ -139,14 +141,16 @@ def combine_tiers(dat):
     dat_phon = dat \
         .filter(pl.col('tier') == "phones") \
         .rename({'label': 'phone'}) \
-        .drop('tier') \
-        .sort(['filename', 'speaker', 'start'])
+        .drop(['tier']) \
+        .sort(['filename', 'start'])
 
     # Assign non-decreasing word ids to phones.
+    # todo: index phones within words
     i = 0
     n = len(dat_phon)
     word_ids = [-1] * n
     for word in dat_word.iter_rows(named=True):
+        word_id = word['word_id']
         # checkme: use filtering instead?
         while i < n:
             phon = dat_phon.row(i, named=True)
@@ -158,7 +162,7 @@ def combine_tiers(dat):
                 i += 1
                 continue
             if phon['end'] <= word['word_end']:
-                word_ids[i] = word['word_id']
+                word_ids[i] = word_id
                 i += 1
                 continue
             break
@@ -176,8 +180,12 @@ def combine_tiers(dat):
     ret = dat_word \
         .join(dat_phon, \
             on=['filename', 'speaker', 'word_id']) \
-        .drop('word_id') \
-        .sort('word_start')
+        .sort(['filename', 'word_start', 'start'])
+
+    # Fix column order.
+    ret = ret[['filename', 'speaker', 'word', 'word_id', \
+               'word_start', 'word_end', 'word_dur_ms', \
+               'phone', 'start', 'end', 'dur_ms']]
 
     return ret
 
@@ -392,6 +400,62 @@ def speaking_rate_after(dat1, dat, window=1000.0):
         pl.Series(name='rate_after', values=val))
 
     return dat1
+
+
+def to_graph(dat):
+    graph = nx.DiGraph()
+
+    # Combine word and phone tiers.
+    dat = combine_tiers(dat)
+    print(dat)
+    print(dat.columns)
+
+    # Word nodes and edges.
+    dat_word = dat[['filename', 'speaker', 'word', 'word_id', \
+                    'word_start', 'word_end', 'word_dur_ms']] \
+                .unique() \
+                .sort(['filename', 'word_id'])
+    print(dat_word)
+
+    speaker_prec = None
+    word_prec = None
+    for row in dat_word.iter_rows(named=True):
+        word = row['word_id']
+        graph.add_node( \
+            word, speaker=row['speaker'], tier='word',
+            label=row['word'], start_ms=row['word_start'],
+            end_ms=row['word_end'], dur_ms=row['word_dur_ms'])
+        if speaker_prec == row['speaker']:
+            graph.add_edge(word_prec, word, label='succ')
+            graph.add_edge(word, word_prec, label='prec')
+        speaker_prec = row['speaker']
+        word_prec = word
+
+    # Phone nodes and edges.
+    speaker_prec = None
+    word_prec = None
+    phone_prec = None
+    phone = dat['word_id'].max() + 1  # Cumulative phone index.
+    phone_idx = 0  # Phone index within word.
+    for row in dat.iter_rows(named=True):
+        # Reset phone_idx at word boundaries.
+        if row['word_id'] != word_prec:
+            phone_idx = 0
+        graph.add_node( \
+            phone, speaker=row['speaker'], tier='phone',
+            label=row['phone'], start_ms=row['start'],
+            end_ms=row['end'], dur_ms=row['dur_ms'])
+        graph.add_edge(row['word_id'], phone, label=f'phone{phone_idx}')
+        phone_idx += 1
+        if row['speaker'] == speaker_prec:
+            graph.add_edge(phone_prec, phone, label='succ')
+            graph.add_edge(phone, phone_prec, label='prec')
+        phone += 1
+        speaker_prec = row['speaker']
+        word_prec = row['word_id']
+        phone_prec = phone
+
+    return graph
 
 
 # Test.
