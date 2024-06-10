@@ -227,4 +227,5 @@ def get_attr(graph, thing, attr, default=None):
     return thing[-1].get(attr, default)
 
 
+# Alias.
 attr = get_attr

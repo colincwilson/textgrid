@@ -322,13 +322,6 @@ def following(dat1, dat, \
     return ret
 
 
-# Alias for following.
-succeeding = following
-# def succeeding(*args, **kwargs):
-#     """ Alias for following(). """
-#     return following(*args, **kwargs)
-
-
 def speaking_rate(dat1, dat, window=1000.0, side='before'):
     """
     Local speaking rate (vowels/second) in dat before or 
