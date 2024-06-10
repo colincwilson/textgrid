@@ -84,54 +84,47 @@ def get_nodes(graph, tier=None, label=None, regex=None):
     return nodes
 
 
-def get_prec(graph, node):
+def get_adj(graph, node, reln='succ', skip=['sp', '']):
+    """
+    Get preceding or following node (assumed unique).
+    """
+    # Null node.
+    if node is None:
+        return None
+    # List of nodes.
+    if isinstance(node, list):
+        return [get_adj(graph, n, reln, skip) for n in node]
+    # Base case.
+    if isinstance(node, int):
+        node_id = node
+    else:
+        node_id = node[0]
+    while 1:
+        edges = [(u, v, d) for (u, v, d) in \
+                    graph.edges(node_id, data=True) \
+                    if d['label'] == reln]
+        if len(edges) == 0:
+            return None
+        node_adj = edges[0][1]  # v of first edge (u, v, d)
+        if get_attr(graph, node_adj, 'label') in skip:
+            node_id = node_adj
+        else:
+            break
+    return (node_adj, graph.nodes[node_adj])
+
+
+def get_prec(graph, node, **kwargs):
     """
     Get preceding node (assumed unique).
     """
-    # Null node.
-    if node is None:
-        return None
-    # List of nodes.
-    if isinstance(node, list):
-        return [get_prec(graph, n) for n in node]
-    # Base case.
-    node_id = node[0]
-    edges = [(u, v, d) for (u, v, d) in \
-                graph.edges(node_id, data=True) \
-                if d['label'] == 'prec']
-    if len(edges) == 0:
-        return None
-    node_prec = [v for (u, v, d) in edges][0]
-    return (node_prec, graph.nodes[node_prec])
+    return get_adj(graph, node, 'prec', **kwargs)
 
 
-# Alias.
-prec = get_prev = get_prec
-
-
-def get_succ(graph, node):
+def get_succ(graph, node, **kwargs):
     """
     Get following node (assumed unique).
     """
-    # Null node.
-    if node is None:
-        return None
-    # List of nodes.
-    if isinstance(node, list):
-        return [get_succ(graph, n) for n in node]
-    # Base case.
-    node_id = node[0]
-    edges = [(u, v, d) for (u, v, d) in \
-                graph.edges(node_id, data=True) \
-                if d['label'] == 'succ']
-    if len(edges) == 0:
-        return None
-    node_succ = [v for (u, v, d) in edges][0]
-    return (node_succ, graph.nodes[node_succ])
-
-
-# Alias.
-succ = get_next = get_succ
+    return get_adj(graph, node, 'succ', **kwargs)
 
 
 def get_window(graph, node, nprec=1, nsucc=1):
@@ -161,10 +154,6 @@ def get_window(graph, node, nprec=1, nsucc=1):
     return (node_prec, node_succ)
 
 
-# Alias.
-window = get_window
-
-
 def get_phones(graph, word_node):
     """
     Get phone within word.
@@ -176,7 +165,10 @@ def get_phones(graph, word_node):
     if isinstance(word_node, list):
         return [get_phones(graph, n) for n in word_node]
     # Base case.
-    node_id = word_node[0]
+    if isinstance(word_node, int):
+        node_id = word_node
+    else:
+        node_id = word_node[0]
     edges = [(u, v, d) for (u, v, d) in \
                 graph.edges(node_id, data=True) \
                 if d['label'].startswith('phone')]
@@ -198,7 +190,10 @@ def get_word(graph, phone_node):
     if isinstance(phone_node, list):
         return [get_word(graph, n) for n in phone_node]
     # Base case.
-    node_id = phone_node[0]
+    if isinstance(phone_node, int):
+        node_id = phone_node
+    else:
+        node_id = phone_node[0]
     edges = [(u, v, d) for (u, v, d) in \
                 graph.edges(node_id, data=True) \
                 if d['label'].startswith('phone')]
@@ -207,10 +202,6 @@ def get_word(graph, phone_node):
     phones = [v for (u, v, d) in edges]
     phones = [(v, graph.nodes[v]) for v in phones]
     return phones
-
-
-# Alias.
-phones = get_phones
 
 
 def get_attr(graph, thing, attr, default=None):
@@ -223,9 +214,28 @@ def get_attr(graph, thing, attr, default=None):
     # List of nodes/edges.
     if isinstance(thing, list):
         return [get_attr(x) for x in thing]
+    # Node index.
+    if isinstance(thing, int):
+        return graph.nodes[thing].get(attr, default)
     # Base case.
     return thing[-1].get(attr, default)
 
 
-# Alias.
+def get_speaker(graph, node):
+    return get_attr(graph, node, 'speaker')
+
+
+def get_tier(graph, node):
+    return get_attr(graph, node, 'tier')
+
+
+def get_label(graph, node):
+    return get_attr(graph, node, 'label')
+
+
+# Aliases.
+prec = get_prev = get_prec
+succ = get_next = get_succ
+window = get_window
+phones = get_phones
 attr = get_attr
