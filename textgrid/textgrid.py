@@ -181,7 +181,7 @@ def combine_tiers(dat):
             on=['filename', 'speaker', 'word_id']) \
         .sort(['filename', 'word_start', 'start'])
 
-    # Fix column order.
+    # Reorder columns.
     ret = ret[['filename', 'speaker', 'word', 'word_id', \
                'word_start', 'word_end', 'word_dur_ms', \
                'phone', 'start', 'end', 'dur_ms']]

@@ -6,6 +6,13 @@ from .textgrid import combine_tiers
 
 
 def to_graph(dat):
+    """
+    Graph with word and phone intervals as nodes, 
+    bidirectional edges between adjacent words/phones in 
+    the same speaker 'turn', and bidirectional edges 
+    from words to the phones that they contain.
+    """
+
     graph = nx.DiGraph()
 
     # Combine word and phone tiers.
@@ -29,7 +36,7 @@ def to_graph(dat):
             word_id, speaker=speaker, tier='word',
             label=row['word'], start_ms=row['word_start'],
             end_ms=row['word_end'], dur_ms=row['word_dur_ms'])
-        if speaker == speaker_prec:
+        if speaker == speaker_prec:  # check 'sp', 'sil' intervals
             graph.add_edge(word_prec, word_id, label='succ')
             graph.add_edge(word_id, word_prec, label='prec')
         speaker_prec = speaker
@@ -54,7 +61,7 @@ def to_graph(dat):
         graph.add_edge(word_id, phone, label=f'phone{phone_idx}')
         graph.add_edge(phone, word_id, label='word')
         phone_idx += 1
-        if speaker == speaker_prec:
+        if speaker == speaker_prec:  # check 'sp', 'sil' intervals
             graph.add_edge(phone_prec, phone, label='succ')
             graph.add_edge(phone, phone_prec, label='prec')
         phone += 1
@@ -156,7 +163,7 @@ def get_window(graph, node, nprec=1, nsucc=1):
 
 def get_phones(graph, word_node):
     """
-    Get phone within word.
+    Get phones within word.
     """
     # Null node.
     if word_node is None:
