@@ -1,5 +1,68 @@
 # Functions for operating on networkx representations of textgrids.
 import re
+import networkx as nx
+
+from .textgrid import combine_tiers
+
+
+def to_graph(dat):
+    graph = nx.DiGraph()
+
+    # Combine word and phone tiers.
+    dat = combine_tiers(dat)
+    print(dat)
+    print(dat.columns)
+
+    # Word nodes and edges.
+    dat_word = dat[['filename', 'speaker', 'word', 'word_id', \
+                    'word_start', 'word_end', 'word_dur_ms']] \
+                .unique() \
+                .sort(['filename', 'word_id'])
+    print(dat_word)
+
+    speaker_prec = None
+    word_prec = None
+    for row in dat_word.iter_rows(named=True):
+        speaker = row['speaker']
+        word_id = row['word_id']
+        graph.add_node( \
+            word_id, speaker=speaker, tier='word',
+            label=row['word'], start_ms=row['word_start'],
+            end_ms=row['word_end'], dur_ms=row['word_dur_ms'])
+        if speaker == speaker_prec:
+            graph.add_edge(word_prec, word_id, label='succ')
+            graph.add_edge(word_id, word_prec, label='prec')
+        speaker_prec = speaker
+        word_prec = word_id
+
+    # Phone nodes and edges.
+    speaker_prec = None
+    word_prec = None
+    phone_prec = None
+    phone = dat['word_id'].max() + 1  # Cumulative phone index.
+    phone_idx = 0  # Phone index within word.
+    for row in dat.iter_rows(named=True):
+        speaker = row['speaker']
+        word_id = row['word_id']
+        # Reset phone_idx at word boundaries.
+        if word_id != word_prec:
+            phone_idx = 0
+        graph.add_node( \
+            phone, speaker=speaker, tier='phone',
+            label=row['phone'], start_ms=row['start'],
+            end_ms=row['end'], dur_ms=row['dur_ms'])
+        graph.add_edge(word_id, phone, label=f'phone{phone_idx}')
+        graph.add_edge(phone, word_id, label='word')
+        phone_idx += 1
+        if speaker == speaker_prec:
+            graph.add_edge(phone_prec, phone, label='succ')
+            graph.add_edge(phone, phone_prec, label='prec')
+        phone += 1
+        speaker_prec = speaker
+        word_prec = word_id
+        phone_prec = phone
+
+    return graph
 
 
 def get_nodes(graph, tier=None, label=None, regex=None):
