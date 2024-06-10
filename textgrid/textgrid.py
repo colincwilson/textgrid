@@ -420,16 +420,17 @@ def to_graph(dat):
     speaker_prec = None
     word_prec = None
     for row in dat_word.iter_rows(named=True):
-        word = row['word_id']
+        speaker = row['speaker']
+        word_id = row['word_id']
         graph.add_node( \
-            word, speaker=row['speaker'], tier='word',
+            word_id, speaker=speaker, tier='word',
             label=row['word'], start_ms=row['word_start'],
             end_ms=row['word_end'], dur_ms=row['word_dur_ms'])
-        if speaker_prec == row['speaker']:
-            graph.add_edge(word_prec, word, label='succ')
-            graph.add_edge(word, word_prec, label='prec')
-        speaker_prec = row['speaker']
-        word_prec = word
+        if speaker == speaker_prec:
+            graph.add_edge(word_prec, word_id, label='succ')
+            graph.add_edge(word_id, word_prec, label='prec')
+        speaker_prec = speaker
+        word_prec = word_id
 
     # Phone nodes and edges.
     speaker_prec = None
@@ -438,21 +439,24 @@ def to_graph(dat):
     phone = dat['word_id'].max() + 1  # Cumulative phone index.
     phone_idx = 0  # Phone index within word.
     for row in dat.iter_rows(named=True):
+        speaker = row['speaker']
+        word_id = row['word_id']
         # Reset phone_idx at word boundaries.
-        if row['word_id'] != word_prec:
+        if word_id != word_prec:
             phone_idx = 0
         graph.add_node( \
-            phone, speaker=row['speaker'], tier='phone',
+            phone, speaker=speaker, tier='phone',
             label=row['phone'], start_ms=row['start'],
             end_ms=row['end'], dur_ms=row['dur_ms'])
-        graph.add_edge(row['word_id'], phone, label=f'phone{phone_idx}')
+        graph.add_edge(word_id, phone, label=f'phone{phone_idx}')
+        graph.add_edge(phone, word_id, label='word')
         phone_idx += 1
-        if row['speaker'] == speaker_prec:
+        if speaker == speaker_prec:
             graph.add_edge(phone_prec, phone, label='succ')
             graph.add_edge(phone, phone_prec, label='prec')
         phone += 1
-        speaker_prec = row['speaker']
-        word_prec = row['word_id']
+        speaker_prec = speaker
+        word_prec = word_id
         phone_prec = phone
 
     return graph
