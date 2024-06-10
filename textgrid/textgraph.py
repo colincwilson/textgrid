@@ -46,7 +46,7 @@ def to_graph(dat):
     speaker_prec = None
     word_prec = None
     phone_prec = None
-    phone = dat['word_id'].max() + 1  # Cumulative phone index.
+    phone_id = dat['word_id'].max() + 1  # Cumulative phone index.
     phone_idx = 0  # Phone index within word.
     for row in dat.iter_rows(named=True):
         speaker = row['speaker']
@@ -55,19 +55,20 @@ def to_graph(dat):
         if word_id != word_prec:
             phone_idx = 0
         graph.add_node( \
-            phone, speaker=speaker, tier='phone',
+            phone_id, speaker=speaker, tier='phone',
             label=row['phone'], start_ms=row['start'],
             end_ms=row['end'], dur_ms=row['dur_ms'])
-        graph.add_edge(word_id, phone, label=f'phone{phone_idx}')
-        graph.add_edge(phone, word_id, label='word')
+        graph.add_edge(phone_id, word_id, label='word')
+        graph.add_edge(word_id, phone_id, label=f'phone{phone_idx}')
+        # note: insertion ordered preserved in python 3.7+
         phone_idx += 1
         if speaker == speaker_prec:  # check 'sp', 'sil' intervals
-            graph.add_edge(phone_prec, phone, label='succ')
-            graph.add_edge(phone, phone_prec, label='prec')
-        phone += 1
+            graph.add_edge(phone_prec, phone_id, label='succ')
+            graph.add_edge(phone_id, phone_prec, label='prec')
+        phone_id += 1
         speaker_prec = speaker
         word_prec = word_id
-        phone_prec = phone
+        phone_prec = phone_id
 
     return graph
 
@@ -186,6 +187,20 @@ def get_phones(graph, word_node):
     return phones
 
 
+def get_initial_phone(graph, word_node):
+    phones = get_phones(graph, word_node)
+    if phones is None:
+        return None
+    return phones[0]
+
+
+def get_final_phone(graph, word_node):
+    phones = get_phones(graph, word_node)
+    if phones is None:
+        return None
+    return phones[-1]
+
+
 def get_word(graph, phone_node):
     """
     Get word containing phone.
@@ -245,4 +260,6 @@ prec = get_prev = get_prec
 succ = get_next = get_succ
 window = get_window
 phones = get_phones
+first_phone = initial_phone = get_initial_phone
+last_phone = final_phone = get_final_phone
 attr = get_attr
