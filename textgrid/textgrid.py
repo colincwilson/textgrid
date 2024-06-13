@@ -20,6 +20,7 @@ MFA_TIERS = '^(.+?)( - utterance)? - ((phone|word|utterance)s?)$'
 def read(filename, fileEncoding="utf-8", verbose=True):
     """
     Read TextGrid into polars data frame.
+    # todo: round timestamps to two decimal places
     """
     filename = str(filename)
     grid = tgt.io.read_textgrid(filename)
