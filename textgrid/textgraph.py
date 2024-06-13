@@ -11,6 +11,7 @@ def to_graph(dat):
     bidirectional edges between adjacent words/phones in 
     the same speaker 'turn', and bidirectional edges 
     from words to the phones that they contain.
+    # todo: speaker 'turn' nodes and edges to words.
     """
 
     graph = nx.DiGraph()
@@ -74,9 +75,7 @@ def to_graph(dat):
 
 
 def get_nodes(graph, tier=None, label=None, regex=None):
-    """
-    Get nodes on tier by exact label or regex.
-    """
+    """ Get nodes on tier by exact label or regex. """
     if tier is None and label is None:
         return graph.nodes(data=True)
     if label is None and regex is None:
@@ -95,6 +94,7 @@ def get_nodes(graph, tier=None, label=None, regex=None):
 def get_adj(graph, node, reln='succ', skip=['sp', '']):
     """
     Get preceding or following node (assumed unique).
+    # todo: limit seach distance/duration
     """
     # Null node.
     if node is None:
@@ -122,20 +122,20 @@ def get_adj(graph, node, reln='succ', skip=['sp', '']):
 
 
 def get_prec(graph, node, **kwargs):
-    """
-    Get preceding node (assumed unique).
-    """
+    """ Get preceding node (assumed unique). """
     return get_adj(graph, node, 'prec', **kwargs)
 
 
 def get_succ(graph, node, **kwargs):
-    """
-    Get following node (assumed unique).
-    """
+    """ Get following node (assumed unique). """
     return get_adj(graph, node, 'succ', **kwargs)
 
 
-def get_window(graph, node, nprec=1, nsucc=1):
+def get_window(graph, node, nprec=1, nsucc=1, **kwargs):
+    """
+    Get preceding and following nodes in window 
+    of specified sizes.
+    """
     # Null node.
     if node is None:
         return None
@@ -148,7 +148,7 @@ def get_window(graph, node, nprec=1, nsucc=1):
     if nprec > 0:
         node_ = node
         for _ in range(nprec):
-            node_ = get_prec(graph, node_)
+            node_ = get_prec(graph, node_, **kwargs)
             node_prec.append(node_)
         node_prec = node_prec[::-1]
 
@@ -156,16 +156,14 @@ def get_window(graph, node, nprec=1, nsucc=1):
     if nsucc > 0:
         node_ = node
         for _ in range(nsucc):
-            node_ = get_succ(graph, node_)
+            node_ = get_succ(graph, node_, **kwargs)
             node_succ.append(node_)
 
     return (node_prec, node_succ)
 
 
 def get_phones(graph, word_node):
-    """
-    Get phones within word.
-    """
+    """ Get phones within word. """
     # Null node.
     if word_node is None:
         return None
@@ -188,6 +186,7 @@ def get_phones(graph, word_node):
 
 
 def get_initial_phone(graph, word_node):
+    """ Get first phone of word. """
     phones = get_phones(graph, word_node)
     if phones is None:
         return None
@@ -195,6 +194,7 @@ def get_initial_phone(graph, word_node):
 
 
 def get_final_phone(graph, word_node):
+    """ Get last phone of word. """
     phones = get_phones(graph, word_node)
     if phones is None:
         return None
@@ -202,9 +202,7 @@ def get_final_phone(graph, word_node):
 
 
 def get_word(graph, phone_node):
-    """
-    Get word containing phone.
-    """
+    """ Get word containing phone. """
     # Null node.
     if phone_node is None:
         return None
@@ -218,18 +216,16 @@ def get_word(graph, phone_node):
         node_id = phone_node[0]
     edges = [(u, v, d) for (u, v, d) in \
                 graph.edges(node_id, data=True) \
-                if d['label'].startswith('phone')]
+                if d['label'] == 'word']
     if len(edges) == 0:
         return None
-    phones = [v for (u, v, d) in edges]
-    phones = [(v, graph.nodes[v]) for v in phones]
-    return phones
+    word = [v for (u, v, d) in edges][0]
+    word = (word, graph.nodes[word])
+    return word
 
 
 def get_attr(graph, thing, attr, default=None):
-    """
-    Get attribute of node or edge.
-    """
+    """ Get attribute of node or edge. """
     # Null node/edge.
     if thing is None:
         return None
@@ -244,15 +240,18 @@ def get_attr(graph, thing, attr, default=None):
 
 
 def get_speaker(graph, node):
+    """ Get speaker of node. """
     return get_attr(graph, node, 'speaker')
 
 
 def get_tier(graph, node):
+    """ Get tier of node. """
     return get_attr(graph, node, 'tier')
 
 
-def get_label(graph, node):
-    return get_attr(graph, node, 'label')
+def get_label(graph, thing):
+    """ Get label of node or edge. """
+    return get_attr(graph, thing, 'label')
 
 
 # Aliases.
