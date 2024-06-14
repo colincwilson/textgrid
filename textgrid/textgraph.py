@@ -91,7 +91,7 @@ def get_nodes(graph, tier=None, label=None, regex=None):
     return nodes
 
 
-def get_adj(graph, node, reln='succ', skip=['sp', '']):
+def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
     """
     Get preceding or following node (assumed unique).
     # todo: limit seach distance/duration
@@ -107,6 +107,8 @@ def get_adj(graph, node, reln='succ', skip=['sp', '']):
         node_id = node
     else:
         node_id = node[0]
+    start_ms = get_start_time(node_id)
+    end_ms = get_end_time(node_id)
     while 1:
         edges = [(u, v, d) for (u, v, d) in \
                     graph.edges(node_id, data=True) \
@@ -114,6 +116,15 @@ def get_adj(graph, node, reln='succ', skip=['sp', '']):
         if len(edges) == 0:
             return None
         node_adj = edges[0][1]  # v of first edge (u, v, d)
+        if max_sep is not None:
+            if reln == 'prec':
+                end_ms_ = get_end_time(node_adj)
+                if (start_ms - end_ms_) > max_sep:
+                    return None
+            if reln == 'succ':
+                start_ms_ = get_start_time(node_adj)
+                if (start_ms_ - end_ms) > max_sep:
+                    return None
         if get_attr(graph, node_adj, 'label') in skip:
             node_id = node_adj
         else:
@@ -249,6 +260,16 @@ def get_tier(graph, node):
     return get_attr(graph, node, 'tier')
 
 
+def get_start_time(graph, node):
+    """ Get start time of node. """
+    return get_attr(graph, node, 'start_ms')
+
+
+def get_end_time(graph, node):
+    """ Get end time of node. """
+    return get_attr(graph, node, 'end_ms')
+
+
 def get_label(graph, thing):
     """ Get label of node or edge. """
     return get_attr(graph, thing, 'label')
@@ -262,3 +283,5 @@ phones = get_phones
 first_phone = initial_phone = get_initial_phone
 last_phone = final_phone = get_final_phone
 attr = get_attr
+get_start = get_start_time
+get_end = get_end_time
