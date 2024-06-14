@@ -94,7 +94,6 @@ def get_nodes(graph, tier=None, label=None, regex=None):
 def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
     """
     Get preceding or following node (assumed unique).
-    # todo: limit seach distance/duration
     """
     # Null node.
     if node is None:
@@ -107,8 +106,8 @@ def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
         node_id = node
     else:
         node_id = node[0]
-    start_ms = get_start_time(node_id)
-    end_ms = get_end_time(node_id)
+    start_ms = get_start_time(graph, node_id)
+    end_ms = get_end_time(graph, node_id)
     while 1:
         edges = [(u, v, d) for (u, v, d) in \
                     graph.edges(node_id, data=True) \
@@ -118,11 +117,11 @@ def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
         node_adj = edges[0][1]  # v of first edge (u, v, d)
         if max_sep is not None:
             if reln == 'prec':
-                end_ms_ = get_end_time(node_adj)
+                end_ms_ = get_end_time(graph, node_adj)
                 if (start_ms - end_ms_) > max_sep:
                     return None
             if reln == 'succ':
-                start_ms_ = get_start_time(node_adj)
+                start_ms_ = get_start_time(graph, node_adj)
                 if (start_ms_ - end_ms) > max_sep:
                     return None
         if get_attr(graph, node_adj, 'label') in skip:
@@ -214,6 +213,7 @@ def get_final_phone(graph, word_node):
 
 def get_word(graph, phone_node):
     """ Get word containing phone. """
+    # todo: consolidate with get_phones
     # Null node.
     if phone_node is None:
         return None
