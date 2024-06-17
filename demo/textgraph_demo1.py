@@ -17,8 +17,11 @@ graph = textgraph.to_graph(dat)
 print(graph)
 
 # Local speaking rate.
-textgraph.speaking_rate(graph, side='before', window_ms=1000.0)
-textgraph.speaking_rate(graph, side='after', window_ms=1000.0)
+textgraph.speaking_rate(graph, side='before', window=1000.0)
+textgraph.speaking_rate(graph, side='after', window=1000.0)
+
+textgraph.to_dat(graph)
+
 sys.exit(0)
 
 # Subset words.
