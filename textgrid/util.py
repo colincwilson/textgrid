@@ -30,4 +30,5 @@ def speaking_rate_calc(vowels, min_dur=500.0):
     dur = (max_time - min_time)
     if dur < (min_dur / 1000.0):
         return np.nan
-    return float(n) / dur
+    rate = np.round(float(n) / dur, 2)
+    return rate
