@@ -1,9 +1,13 @@
-# Praat textgrids represented as polars dataframes and networkx graphs.
+# Praat textgrids represented as polars dataframes and
+# networkx graphs.
+# Notes:
+# - Internal time unit is milliseconds (ms), not seconds
+#   as in Praat.
+#
 
 import re, sys
 import numpy as np
 from pathlib import Path
-#from collections import namedtuple
 import polars as pl
 import tgt
 
@@ -38,15 +42,18 @@ def read(filename, fileEncoding="utf-8", verbose=True):
                 interval.text, interval.start_time, interval.end_time))
 
     dat = pl.DataFrame( \
-        dat, schema=['speaker', 'tier', 'label', 'start', 'end'])
+        dat, schema=['speaker', 'tier', 'label', 'start_s', 'end_s'])
     dat = dat.with_columns( \
         filename=pl.lit(filename),
-        dur_ms=1000.0*(pl.col('end') - pl.col('start')))
+        start_ms=1000.0*pl.col('start_s'),
+        end_ms=1000.0*pl.col('end_s'),
+        dur_ms=1000.0*(pl.col('end_s') - pl.col('start_s'))
+        )
 
     dat = dat[[ \
         'filename', 'speaker', 'tier', 'label',
-        'start', 'end', 'dur_ms']]
-    dat = dat.sort(['start', 'speaker'])
+        'start_ms', 'end_ms', 'dur_ms']]
+    dat = dat.sort(['start_ms', 'speaker'])
 
     if verbose:
         speakers = dat['speaker'].unique().to_list()
@@ -72,7 +79,7 @@ def write(dat, filename, speakers=None, tiers=None):
 
     # Make textgrid.
     start_time = 0.0
-    end_time = dat['end'].max()
+    end_time = 1000.0 * dat['end_ms'].max()
     grid = tgt.core.TextGrid(filename)
 
     # Make tiers.
@@ -112,7 +119,10 @@ def _make_tier(dat, speaker, tier):
         tier_name = f'{speaker} - {tier}'
     tier = tgt.core.IntervalTier(name=tier_name)
     for row in dat.rows(named=True):
-        interval = tgt.core.Interval(row['start'], row['end'], row['label'])
+        interval = tgt.core.Interval( \
+            1000.0 * row['start'],
+            1000.0 * row['end'],
+            row['label'])
         try:
             tier.add_interval(interval)
         except:
@@ -127,10 +137,10 @@ def combine_tiers(dat):
     # Word tier.
     dat_word = dat \
         .filter(pl.col('tier') == 'words') \
-        .rename({'label': 'word', 'start': 'word_start',
-        'end': 'word_end', 'dur_ms': 'word_dur_ms'}) \
+        .rename({'label': 'word', 'start_ms': 'word_start_ms',
+        'end_ms': 'word_end_ms', 'dur_ms': 'word_dur_ms'}) \
         .drop(['tier', 'label']) \
-        .sort(['filename', 'word_start'])
+        .sort(['filename', 'word_start_ms'])
 
     # Assign consecutive ids to words.
     dat_word = dat_word.with_columns( \
@@ -142,7 +152,7 @@ def combine_tiers(dat):
         .filter(pl.col('tier') == "phones") \
         .rename({'label': 'phone'}) \
         .drop(['tier']) \
-        .sort(['filename', 'start'])
+        .sort(['filename', 'start_ms'])
 
     # Assign non-decreasing word ids to phones.
     # todo: index phones within words
@@ -158,10 +168,10 @@ def combine_tiers(dat):
                 break
             if phon['speaker'] != word['speaker']:
                 break
-            if phon['start'] < word['word_start']:
+            if phon['start_ms'] < word['word_start_ms']:
                 i += 1
                 continue
-            if phon['end'] <= word['word_end']:
+            if phon['end_ms'] <= word['word_end_ms']:
                 word_ids[i] = word_id
                 i += 1
                 continue
@@ -180,12 +190,12 @@ def combine_tiers(dat):
     ret = dat_word \
         .join(dat_phon, \
             on=['filename', 'speaker', 'word_id']) \
-        .sort(['filename', 'word_start', 'start'])
+        .sort(['filename', 'word_start_ms', 'start_ms'])
 
     # Reorder columns.
     ret = ret[['filename', 'speaker', 'word', 'word_id', \
-               'word_start', 'word_end', 'word_dur_ms', \
-               'phone', 'start', 'end', 'dur_ms']]
+               'word_start_ms', 'word_end_ms', 'word_dur_ms', \
+               'phone', 'start_ms', 'end_ms', 'dur_ms']]
 
     return ret
 
@@ -196,7 +206,7 @@ def intervals_at(dat, timepoint, speakers=None, tiers=None):
     for all speakers or specified speakers, on all tiers or 
     specified tiers.
         dat: polars dataframe
-        timepoint (float): time point (s)
+        timepoint (float): time point [ms]
         speakers (list): speakers to include (None => all)
         tier (str): tiers to include (None => all)
     """
@@ -205,8 +215,8 @@ def intervals_at(dat, timepoint, speakers=None, tiers=None):
         dat1 = dat1.filter(pl.col('speaker').is_in(speakers))
     if tiers is not None:
         dat1 = dat1.filter(pl.col('tier').is_in(tiers))
-    dat1 = dat1.filter((pl.col('start') <= timepoint),
-                       (pl.col('end') >= timepoint))
+    dat1 = dat1.filter((pl.col('start_ms') <= timepoint),
+                       (pl.col('end_ms') >= timepoint))
     return dat1
 
 
@@ -216,12 +226,10 @@ def intervals_between(dat, start, end, speakers=None, tiers=None):
     for all speakers or specified speakers, on all tiers or 
     specified tiers.
         dat: polars dataframe
-        start (float): start time (s)
-        end (float): end time (s)
+        start (float): start time [ms]
+        end (float): end time [ms]
         speakers (list): speakers to include (None => all)
         tiers (str): tiers to include (None => all)
-
-
     """
     dat1 = dat
     if speakers is not None:
@@ -231,8 +239,8 @@ def intervals_between(dat, start, end, speakers=None, tiers=None):
         dat1 = dat1.filter( \
             pl.col('tier').is_in(tiers))
     dat1 = dat1.filter( \
-        (pl.col('start') >= start),
-        (pl.col('end') <= end))
+        (pl.col('start_ms') >= start),
+        (pl.col('end_ms') <= end))
     return dat1
 
 
@@ -243,7 +251,7 @@ def preceding(dat1, dat, \
     filename, same speaker, and (by default) same tier for each 
     interval (row) in dat1. Optionally specify tier of matches. 
     Skip designated labels, include only labels that match 
-    pattern, and limit search by maximum separation (ms).
+    pattern, and limit search by maximum separation [ms].
     """
     if tier is not None:
         dat = dat.filter(pl.col('tier') == tier)
@@ -254,18 +262,17 @@ def preceding(dat1, dat, \
 
     dats = []
     missing = dat.clear(n=1)
-    max_sep_s = max_sep / 1000.0
     for row in dat1.iter_rows(named=True):
         if (row['filename'] is None) or (row['speaker'] is None) \
-            or (row['tier'] is None) or (row['start'] is None):
+            or (row['tier'] is None) or (row['start_ms'] is None):
             dats.append(missing)
             continue
 
         dat_ = dat.filter( \
             pl.col('filename') == row['filename'],
             pl.col('speaker') == row['speaker'],
-            pl.col('end') <= row['start'],
-            pl.col('end') >= (row['start'] - max_sep_s))
+            pl.col('start_ms') <= row['start_ms'],
+            pl.col('start_ms') >= (row['start_ms'] - max_sep))
 
         if tier is None:
             dat_ = dat_.filter( \
@@ -287,7 +294,7 @@ def following(dat1, dat, \
     filename, same speaker, and (by default) same tier for each 
     interval (row) in dat1. Optionally specify tier of matches. 
     Skip designated labels, include only labels that match 
-    pattern, and limit search by maximum separation (ms).
+    pattern, and limit search by maximum separation [ms].
     """
     if tier is not None:
         dat = dat.filter(pl.col('tier') == tier)
@@ -297,19 +304,18 @@ def following(dat1, dat, \
         pl.col('label').str.contains(pattern))
 
     missing = dat.clear(n=1)
-    max_sep_s = max_sep / 1000.0
     dats = []
     for row in dat1.iter_rows(named=True):
         if (row['filename'] is None) or (row['speaker'] is None) \
-            or (row['tier'] is None) or (row['end'] is None):
+            or (row['tier'] is None) or (row['end_ms'] is None):
             dats.append(missing)
             continue
 
         dat_ = dat.filter( \
             pl.col('filename') == row['filename'],
             pl.col('speaker') == row['speaker'],
-            pl.col('start') >= row['end'],
-            pl.col('start') <= (row['end'] + max_sep_s))
+            pl.col('end_ms') >= row['end_ms'],
+            pl.col('end_ms') <= (row['end_ms'] + max_sep))
 
         if tier is None:
             dat_ = dat_.filter(pl.col('tier') == row['tier'])
@@ -339,25 +345,24 @@ def speaking_rate_before(dat1, dat, window=1000.0):
     """
     Speaking rate (vowels/second) in dat before each 
     interval (row) in dat1 within specified window.
-        window (ms): duration of window (default = 1000.0)
+        window: duration of window (default = 1000.0) [ms]
     """
     dat = dat.filter( \
         pl.col('tier') == 'phones',
         pl.col('label').str.contains(ARPABET_VOWELS))
 
     val = []
-    window_s = window / 1000.0
     for row in dat1.iter_rows(named=True):
         dat_ = dat.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
-                pl.col('end') <= row['start'],
-                (row['start'] - pl.col('start')) <= window_s)
+                pl.col('end_ms') <= row['start_ms'],
+                (row['start_ms'] - pl.col('start_ms')) <= window)
         n = len(dat_)
         if n == 0:
             val.append(np.nan)
         else:
-            val.append(float(n) / window_s)
+            val.append(1000.0 * float(n) / window)
 
     dat1 = dat1.with_columns( \
         pl.Series(name='rate_before', values=val))
@@ -369,25 +374,24 @@ def speaking_rate_after(dat1, dat, window=1000.0):
     """
     Speaking rate (vowels/second) in dat after each
     interval (row) in dat1 within specified window.
-        window (ms): duration of window (default = 1000.0)
+        window: duration of window (default = 1000.0) [ms]
     """
     dat = dat.filter( \
         pl.col('tier') == 'phones',
         pl.col('label').str.contains(ARPABET_VOWELS))
 
     val = []
-    window_s = window / 1000.0
     for row in dat1.iter_rows(named=True):
         dat_ = dat.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
-                pl.col('start') >= row['end'],
-                (pl.col('end') - row['end']) <= window_s)
+                pl.col('start_ms') >= row['end_ms'],
+                (pl.col('end_ms') - row['end_ms']) <= window)
         n = len(dat_)
         if n == 0:
             val.append(np.nan)
         else:
-            val.append(float(n) / window_s)
+            val.append(1000.0 * float(n) / window)
 
     dat1 = dat1.with_columns( \
         pl.Series(name='rate_after', values=val))
@@ -415,9 +419,9 @@ def main():
     print(grid2)
 
     grid1 = grid1[[
-        'filename', 'speaker', 'tier', 'label', 'start', 'end', 'dur_ms'
+        'filename', 'speaker', 'tier', 'label', 'start_ms', 'end_ms', 'dur_ms'
     ]]
-    grid2 = grid2[['speaker', 'tier', 'label', 'start', 'end', 'dur_ms']]
+    grid2 = grid2[['speaker', 'tier', 'label', 'start_ms', 'end_ms', 'dur_ms']]
     grid2.columns = ['_' + x for x in grid2.columns]
 
     grid12 = pl.concat([grid1, grid2], how='horizontal')

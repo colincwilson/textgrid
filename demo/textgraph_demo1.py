@@ -5,6 +5,7 @@ import polars as pl
 from pathlib import Path
 
 from textgrid import textgrid
+from textgrid import textgraph
 
 # # # # # # # # # #
 # Read textgrid.
@@ -12,8 +13,12 @@ grid_file = Path.home() / \
     'Projects/SCOTUSProductionPlanning/textgrids_tagged/2013/12-574.TextGrid'
 dat = textgrid.read(grid_file)
 
-graph = textgrid.to_graph(dat)
+graph = textgraph.to_graph(dat)
 print(graph)
+
+# Local speaking rate.
+textgraph.speaking_rate(graph, side='before', window_ms=1000.0)
+textgraph.speaking_rate(graph, side='after', window_ms=1000.0)
 sys.exit(0)
 
 # Subset words.
