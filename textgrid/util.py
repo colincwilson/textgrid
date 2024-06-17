@@ -20,7 +20,7 @@ def speaking_rate_calc(vowels, min_dur=500.0):
     """
     Local speaking rate computed 
     from list of vowel intervals.
-        min_dur: minimum duration [ms]
+        min_dur: minimum duration for estimation [ms]
     """
     n = len(vowels)
     if n == 0:

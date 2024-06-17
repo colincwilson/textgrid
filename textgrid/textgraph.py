@@ -285,7 +285,7 @@ def get_label(graph, thing):
 
 def speaking_rate(graph, vowel_regex=None, window=1000.0, side='before'):
     """
-    Local speaking rate (vowels/second) for phone and word 
+    Add local speaking rate (vowels/second) to phone and word 
     nodes, in preceding (before) or following (after) context, 
     within specified window [ms].
     """
