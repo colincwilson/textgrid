@@ -99,41 +99,51 @@ def get_nodes(graph, tier=None, label=None, regex=None):
     return nodes
 
 
+def node_access_decorator(func):
+    """
+    Decorator for node access functions: handle NAs,
+    lift to lists, conver nodes to ids.
+    """
+
+    def _wrapper(graph, node, **kwargs):
+        if graph is None or node is None:
+            return None
+        if isinstance(node, list):
+            return [func(graph, n, **kwargs) for n in node]
+        if isinstance(node, int):
+            node_id = node
+        else:
+            node_id = node[0]
+        return func(graph, node_id, **kwargs)
+
+    return _wrapper
+
+
+@node_access_decorator
 def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
     """
     Get preceding or following node (assumed unique).
     """
-    # Null node.
-    if node is None:
-        return None
-    # List of nodes.
-    if isinstance(node, list):
-        return [get_adj(graph, n, reln, skip) for n in node]
-    # Base case.
-    if isinstance(node, int):
-        node_id = node
-    else:
-        node_id = node[0]
-    start_ms = get_start_time(graph, node_id)
-    end_ms = get_end_time(graph, node_id)
+    start_ms = get_start_time(graph, node)
+    end_ms = get_end_time(graph, node)
     while 1:
         edges = [(u, v, d) for (u, v, d) in \
-                    graph.edges(node_id, data=True) \
+                    graph.edges(node, data=True) \
                     if d['label'] == reln]
         if len(edges) == 0:
             return None
         node_adj = edges[0][1]  # v of first edge (u, v, d)
         if max_sep is not None:
             if reln == 'prec':
-                end_ms_ = get_end_time(graph, node_adj)
-                if (start_ms - end_ms_) > max_sep:
+                start_ms_ = get_start_time(graph, node_adj)
+                if (start_ms - start_ms_) > max_sep:
                     return None
             elif reln == 'succ':
-                start_ms_ = get_start_time(graph, node_adj)
-                if (start_ms_ - end_ms) > max_sep:
+                end_ms_ = get_end_time(graph, node_adj)
+                if (end_ms_ - end_ms) > max_sep:
                     return None
         if get_attr(graph, node_adj, 'label') in skip:
-            node_id = node_adj
+            node = node_adj
         else:
             break
     return (node_adj, graph.nodes[node_adj])
@@ -141,27 +151,17 @@ def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
 
 def get_prec(graph, node, **kwargs):
     """ Get preceding node (assumed unique). """
-    return get_adj(graph, node, 'prec', **kwargs)
+    return get_adj(graph, node, reln='prec', **kwargs)
 
 
 def get_succ(graph, node, **kwargs):
     """ Get following node (assumed unique). """
-    return get_adj(graph, node, 'succ', **kwargs)
+    return get_adj(graph, node, reln='succ', **kwargs)
 
 
+@node_access_decorator
 def get_window(graph, node, nprec=1, nsucc=1, **kwargs):
-    """
-    Get preceding and following nodes in window 
-    of specified size.
-    """
-    # Null node.
-    if node is None:
-        return None
-    # List of nodes.
-    if isinstance(node, list):
-        return [get_window(graph, n, nprec, nsucc) \
-                    for n in node]
-    # Base case.
+    """ Get window of preceding and following nodes. """
     node_prec = []
     if nprec > 0:
         node_ = node
@@ -180,21 +180,11 @@ def get_window(graph, node, nprec=1, nsucc=1, **kwargs):
     return (node_prec, node_succ)
 
 
+@node_access_decorator
 def get_phones(graph, word_node):
     """ Get phones within word. """
-    # Null node.
-    if word_node is None:
-        return None
-    # List of nodes.
-    if isinstance(word_node, list):
-        return [get_phones(graph, n) for n in word_node]
-    # Base case.
-    if isinstance(word_node, int):
-        node_id = word_node
-    else:
-        node_id = word_node[0]
     edges = [(u, v, d) for (u, v, d) in \
-                graph.edges(node_id, data=True) \
+                graph.edges(word_node, data=True) \
                 if d['label'].startswith('phone')]
     if len(edges) == 0:
         return None
@@ -203,6 +193,7 @@ def get_phones(graph, word_node):
     return phones
 
 
+@node_access_decorator
 def get_initial_phone(graph, word_node):
     """ Get first phone of word. """
     phones = get_phones(graph, word_node)
@@ -211,30 +202,20 @@ def get_initial_phone(graph, word_node):
     return phones[0]
 
 
+@node_access_decorator
 def get_final_phone(graph, word_node):
     """ Get last phone of word. """
     phones = get_phones(graph, word_node)
     if phones is None:
         return None
-    return phones[-1]
+    return phones[-1]  # negative indices, bless
 
 
+@node_access_decorator
 def get_word(graph, phone_node):
     """ Get word containing phone. """
-    # todo: consolidate with get_phones
-    # Null node.
-    if phone_node is None:
-        return None
-    # List of nodes.
-    if isinstance(phone_node, list):
-        return [get_word(graph, n) for n in phone_node]
-    # Base case.
-    if isinstance(phone_node, int):
-        node_id = phone_node
-    else:
-        node_id = phone_node[0]
     edges = [(u, v, d) for (u, v, d) in \
-                graph.edges(node_id, data=True) \
+                graph.edges(phone_node, data=True) \
                 if d['label'] == 'word']
     if len(edges) == 0:
         return None
@@ -243,7 +224,8 @@ def get_word(graph, phone_node):
     return word
 
 
-def get_attr(graph, thing, attr, default=None):
+# todo: decorator
+def get_attr(graph, thing, attr=None, default=None):
     """ Get attribute of node or edge. """
     # Null node/edge.
     if thing is None:
@@ -281,6 +263,9 @@ def get_end_time(graph, node):
 def get_label(graph, thing):
     """ Get label of node or edge. """
     return get_attr(graph, thing, 'label')
+
+
+# # # # # # # # # #
 
 
 def speaking_rate(graph, vowel_regex=None, window_ms=1000.0, side='before'):
