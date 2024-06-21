@@ -121,7 +121,7 @@ def node_access_decorator(func):
         if graph is None or node is None:
             return None
         if isinstance(node, list):
-            return [func(graph, n, **kwargs) for n in node]
+            return [_wrapper(graph, n, **kwargs) for n in node]
         if isinstance(node, int):
             node_id = node
         else:

@@ -1,5 +1,11 @@
+import itertools
 import numpy as np
 from scipy import stats
+
+
+def flatten(x):
+    """ Flatten list of lists. """
+    return list(itertools.chain(*x))
 
 
 def summary_stats(v):
