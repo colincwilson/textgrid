@@ -94,21 +94,63 @@ def to_dat(graph):
 # # # # # # # # # #
 
 
-def get_nodes(graph, tier=None, label=None, regex=None):
-    """ Get nodes on tier by exact label or regex. """
-    if tier is None and label is None:
-        return graph.nodes(data=True)
-    if label is None and regex is None:
-        nodes = [(n,d) for (n,d) in graph.nodes(data=True) \
-                    if d['tier'] == tier]
-        return nodes
-    if label is not None:
-        nodes = [(n, d) for (n, d) in graph.nodes(data=True) \
-                    if d['tier'] == tier and d['label'] == label]
-        return nodes
-    nodes = [(n, d) for (n, d) in graph.nodes(data=True) \
-                if d['tier'] == tier and re.search(regex, d['label'])]
-    return nodes
+def filter_nodes(graph, nodes=None, tier=None, label=None, regex=None, \
+                 func=None, noneify=False):
+    """
+    Filter an iterable of nodes with tier / exact label /
+    regex / boolean function. If noneify is True, replace 
+    nodes that would be filtered with placeholder None.
+    """
+    if graph is None:
+        return []
+    if nodes is None:
+        nodes = graph.nodes(data=True)
+
+    ret = []
+    for node in nodes:
+        # Skip nones.
+        if node is None:
+            if noneify: ret.append(None)
+            continue
+        # Get node id and data.
+        if isinstance(node, int):
+            node = (node, graph.nodes[node])
+        node_id, node_dat = node
+
+        # Filter.
+        match = True
+        # Match tier.
+        if (tier is not None) and (node_dat['tier'] != tier):
+            match = False
+        # Match exact label.
+        if match and (label is not None) and (node_dat['label'] != label):
+            match = False
+        # Match label regex.
+        if match and (regex is not None) and \
+            not re.search(regex, node_dat['label']):
+            match = False
+        # Match data predicate.
+        if match and (func is not None) and not func(node_dat):
+            match = False
+
+        # Accumulate.
+        if match:
+            ret.append(node)
+        elif noneify:
+            ret.append(None)
+
+    return ret
+
+
+def get_nodes(graph, **kwargs):
+    """
+    Get nodes in graph with optional filtering
+    (see filter_nodes for args).
+    """
+    if graph is None:
+        return []
+    nodes = graph.nodes(data=True)
+    return filter_nodes(graph, nodes, **kwargs)
 
 
 def node_access_decorator(func):
@@ -360,7 +402,7 @@ def speaking_rate(graph,
         phone_ = phone
 
     # Set word rate equal to phone rate.
-    for word in get_nodes(graph, 'word'):
+    for word in get_nodes(graph, tier='word'):
         phones = get_phones(graph, word)
         if before:
             # Rate before word is rate before first phone.
@@ -373,7 +415,7 @@ def speaking_rate(graph,
         print(f'* Speaking rate statistics: '
               f'{summary_stats(np.array(rates))}')
 
-    return
+    return graph
 
 
 # Aliases.
