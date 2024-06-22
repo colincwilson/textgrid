@@ -283,7 +283,11 @@ def get_label(graph, thing):
 # # # # # # # # # #
 
 
-def speaking_rate(graph, vowel_regex=None, window=1000.0, side='before'):
+def speaking_rate(graph,
+                  vowel_regex=None,
+                  window=1000.0,
+                  side='before',
+                  verbose=True):
     """
     Add local speaking rate (vowels/second) to phone and word 
     nodes, in preceding (before) or following (after) context, 
@@ -365,7 +369,9 @@ def speaking_rate(graph, vowel_regex=None, window=1000.0, side='before'):
             # Rate after word is rate after last phone.
             word[1][rate_side] = phones[-1][1][rate_side]
 
-    print(summary_stats(np.array(rates)))
+    if verbose:
+        print(f'* Speaking rate statistics: '
+              f'{summary_stats(np.array(rates))}')
 
     return
 
