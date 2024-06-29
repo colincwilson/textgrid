@@ -1,10 +1,10 @@
-# Functions for operating on igraph representations of textgrids.
-# see: https://igraph.org/
+# Functions for operating on networkx representations of textgrids.
+# todo: TextGraph class backed by networkx DiGraph
 import re, sys
-import igraph
+import networkx as nx
 import numpy as np
 import polars as pl
-#from collections import deque
+from collections import deque
 
 from .textgrid import combine_tiers
 from .textgrid import ARPABET_VOWELS
@@ -21,7 +21,7 @@ def to_graph(dat):
     # todo: check/fix 'turn' segmentation
     """
 
-    graph = igraph.Graph(n_vertices, edges)
+    graph = nx.DiGraph()
 
     # Combine word and phone tiers.
     dat = combine_tiers(dat)
@@ -36,49 +36,48 @@ def to_graph(dat):
     print(dat_word)
 
     speaker_ = None
-    word_ = None
-    word_index = {}  # Map dataframe word_id -> vertex index.
+    word_id_ = None
     for row in dat_word.iter_rows(named=True):
         speaker = row['speaker']
         word_id = row['word_id']
-        word = graph.add_vertex( \
-            speaker=speaker, tier='word', word_id=word_id,
+        graph.add_node( \
+            word_id, speaker=speaker, tier='word',
             label=row['word'], start=row['word_start'],
             end=row['word_end'], dur_ms=row['word_dur_ms'])
-        word_index[word_id] = word.index
-        # note: insertion ordered preserved
-        if (word_ is not None) and (speaker == speaker_):
+        # note: insertion ordered preserved in python 3.7+
+        if (word_id_ is not None) and (speaker == speaker_):
             # todo: check 'sp', 'sil' intervals
-            graph.add_edge(word_, word, label='succ')
-            graph.add_edge(word, word_, label='prec')
+            graph.add_edge(word_id_, word_id, label='succ')
+            graph.add_edge(word_id, word_id_, label='prec')
         speaker_ = speaker
-        word_ = word
+        word_id_ = word_id
 
     # Phone nodes and edges.
     speaker_ = None
-    word_ = None
-    phone_ = None
+    word_id_ = None
+    phone_id_ = None
+    phone_id = dat['word_id'].max() + 1  # Cumulative phone index.
     phone_idx = 0  # Phone index within word.
     for row in dat.iter_rows(named=True):
         speaker = row['speaker']
         word_id = row['word_id']
-        word = graph.vs[word_index[word_id]]
         # Reset phone_idx at word boundaries.
-        if word != word_:
+        if word_id != word_id_:
             phone_idx = 0
-        phone = graph.add_node( \
-            speaker=speaker, tier='phone', word_id=word_id,
+        graph.add_node( \
+            phone_id, speaker=speaker, tier='phone',
             label=row['phone'], start=row['start'],
             end=row['end'], dur_ms=row['dur_ms'])
-        graph.add_edge(phon, word, label='word')
-        graph.add_edge(word, phon, label=f'phone{phone_idx}')
-        # note: insertion ordered preserved
-        if (phone_ is not None) and (speaker == speaker_):
-            graph.add_edge(phone_, phone, label='succ')
-            graph.add_edge(phone, phone_, label='prec')
+        graph.add_edge(phone_id, word_id, label='word')
+        graph.add_edge(word_id, phone_id, label=f'phone{phone_idx}')
+        # note: insertion ordered preserved in python 3.7+
+        if (phone_id_ is not None) and (speaker == speaker_):
+            graph.add_edge(phone_id_, phone_id, label='succ')
+            graph.add_edge(phone_id, phone_id_, label='prec')
         speaker_ = speaker
-        word_ = word
-        phone_ = phone
+        word_id_ = word_id
+        phone_id_ = phone_id
+        phone_id += 1
         phone_idx += 1
 
     return graph
@@ -86,8 +85,8 @@ def to_graph(dat):
 
 def to_dat(graph):
     """ Convert graph to dataframe. """
-    dat = [v.attributes() for v in graph.vs]
-    dat = pl.DataFrame(dat)
+    rows = [d for (idx, d) in graph.nodes(data=True)]
+    dat = pl.DataFrame(rows)
     print(dat)
     return dat
 
@@ -104,8 +103,8 @@ def filter_nodes(graph, nodes=None, tier=None, label=None, regex=None, \
     """
     if graph is None:
         return []
-    if nodes is None
-        nodes = list(graph.vs)
+    if nodes is None:
+        nodes = graph.nodes(data=True)
 
     ret = []
     for node in nodes:
@@ -113,10 +112,10 @@ def filter_nodes(graph, nodes=None, tier=None, label=None, regex=None, \
         if node is None:
             if noneify: ret.append(None)
             continue
-        # Get node data (aka attributes).
+        # Get node id and data.
         if isinstance(node, int):
-            node = graph.vs[node]
-        node_dat = node.attributes()
+            node = (node, graph.nodes[node])
+        node_id, node_dat = node
 
         # Filter.
         match = True
@@ -146,9 +145,12 @@ def filter_nodes(graph, nodes=None, tier=None, label=None, regex=None, \
 def get_nodes(graph, **kwargs):
     """
     Get nodes in graph with optional filtering
-    (see filter_nodes for options).
+    (see filter_nodes for args).
     """
-    return filter_nodes(graph, **kwargs)
+    if graph is None:
+        return []
+    nodes = graph.nodes(data=True)
+    return filter_nodes(graph, nodes, **kwargs)
 
 
 def node_access_decorator(func):
@@ -163,8 +165,10 @@ def node_access_decorator(func):
         if isinstance(node, list):
             return [_wrapper(graph, n, **kwargs) for n in node]
         if isinstance(node, int):
-            node = graph.vs[node]
-        return func(graph, node, **kwargs)
+            node_id = node
+        else:
+            node_id = node[0]
+        return func(graph, node_id, **kwargs)
 
     return _wrapper
 
@@ -180,10 +184,12 @@ def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
     if max_sep is not None:
         max_sep_s = max_sep / 1000.0
     while 1:
-        edges = [e for e in node.out_edges if e['label'] == reln]
+        edges = [(u, v, d) for (u, v, d) in \
+                    graph.edges(node, data=True) \
+                    if d['label'] == reln]
         if len(edges) == 0:
             return None
-        node_adj = graph.vs[edges[0].target]
+        node_adj = edges[0][1]  # v of first edge (u, v, d)
         if max_sep is not None:
             if reln == 'prec':
                 start_time_ = get_start_time(graph, node_adj)
@@ -193,11 +199,11 @@ def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
                 end_time_ = get_end_time(graph, node_adj)
                 if (end_time_ - end_time) > max_sep_s:
                     return None
-        if node_adj['label'] in skip:
+        if get_attr(graph, node_adj, 'label') in skip:
             node = node_adj
         else:
             break
-    return node_adj
+    return (node_adj, graph.nodes[node_adj])
 
 
 def get_prec(graph, node, **kwargs):
@@ -232,42 +238,46 @@ def get_window(graph, node, nprec=1, nsucc=1, **kwargs):
 
 
 @node_access_decorator
-def get_phones(graph, word):
+def get_phones(graph, word_node):
     """ Get phones within word. """
-    edges = [e for e in word.out_edges() \
-        if e['label'].startswith('phone')]
+    edges = [(u, v, d) for (u, v, d) in \
+                graph.edges(word_node, data=True) \
+                if d['label'].startswith('phone')]
     if len(edges) == 0:
         return None
-    phones = [graph.vs[e.target] for e in edges]
+    phones = [v for (u, v, d) in edges]
+    phones = [(v, graph.nodes[v]) for v in phones]
     return phones
 
 
 @node_access_decorator
-def get_initial_phone(graph, word):
+def get_initial_phone(graph, word_node):
     """ Get first phone of word. """
-    phones = get_phones(graph, word)
+    phones = get_phones(graph, word_node)
     if phones is None:
         return None
     return phones[0]
 
 
 @node_access_decorator
-def get_final_phone(graph, word):
+def get_final_phone(graph, word_node):
     """ Get last phone of word. """
-    phones = get_phones(graph, word)
+    phones = get_phones(graph, word_node)
     if phones is None:
         return None
     return phones[-1]  # negative indices, bless
 
 
 @node_access_decorator
-def get_word(graph, phone):
+def get_word(graph, phone_node):
     """ Get word containing phone. """
-    edges = [e for e in phone.out_edges() \
-        if e['label'] == 'word']
+    edges = [(u, v, d) for (u, v, d) in \
+                graph.edges(phone_node, data=True) \
+                if d['label'] == 'word']
     if len(edges) == 0:
         return None
-    word = graph.vs[edges.target]
+    word = [v for (u, v, d) in edges][0]
+    word = (word, graph.nodes[word])
     return word
 
 
@@ -282,10 +292,9 @@ def get_attr(graph, thing, attr=None, default=None):
         return [get_attr(x) for x in thing]
     # Node index.
     if isinstance(thing, int):
-        thing = graph.vs[thing]
+        return graph.nodes[thing].get(attr, default)
     # Base case.
-    # todo: avoid dictionary creation
-    return thing.attributes().get(attr, default)
+    return thing[-1].get(attr, default)
 
 
 def get_speaker(graph, node):
@@ -350,9 +359,9 @@ def speaking_rate(graph,
 
     rate = np.nan
     rates.append(rate)
-    phone[rate_side] = rate
+    phone[1][rate_side] = rate
     vowels_ = deque()
-    if re.search(vowel_regex, phone['label']):
+    if re.search(vowel_regex, phone[1]['label']):
         vowels_.append(phone)
     phone_ = phone
 
@@ -361,9 +370,9 @@ def speaking_rate(graph,
         if phone != get_next(phone_):
             rate = np.nan
             rates.append(rate)
-            phone[rate_side] = rate
+            phone[1][rate_side] = rate
             vowels_.clear()
-            if re.search(vowel_regex, phone['label']):
+            if re.search(vowel_regex, phone[1]['label']):
                 vowels_.append(phone)
             phone_ = phone
             continue
@@ -372,9 +381,9 @@ def speaking_rate(graph,
         n = len(vowels_)
         for _ in range(n):
             if before:
-                delta = (phone['start'] - vowels_[0]['end'])
+                delta = (phone[1]['start'] - vowels_[0][1]['end'])
             else:
-                delta = (vowels_[0]['start'] - phone['end'])
+                delta = (vowels_[0][1]['start'] - phone[1]['end'])
             if delta > window_s:
                 vowels_.popleft()
 
@@ -383,12 +392,12 @@ def speaking_rate(graph,
         if n == 0:
             rate = np.nan
             rates.append(rate)
-            phone[rate_side] = rate
+            phone[1][rate_side] = rate
         else:
             rate = speaking_rate_calc(vowels_)
             rates.append(rate)
-            phone[rate_side] = rate
-        if re.search(vowel_regex, phone['label']):
+            phone[1][rate_side] = rate
+        if re.search(vowel_regex, phone[1]['label']):
             vowels_.append(phone)
         phone_ = phone
 
@@ -397,10 +406,10 @@ def speaking_rate(graph,
         phones = get_phones(graph, word)
         if before:
             # Rate before word is rate before first phone.
-            word[rate_side] = phones[0][rate_side]
+            word[1][rate_side] = phones[0][1][rate_side]
         else:
             # Rate after word is rate after last phone.
-            word[rate_side] = phones[-1][rate_side]
+            word[1][rate_side] = phones[-1][1][rate_side]
 
     if verbose:
         print(f'* Speaking rate statistics: '
