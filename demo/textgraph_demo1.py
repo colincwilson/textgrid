@@ -16,6 +16,7 @@ dat = textgrid.read(grid_file)
 
 graph = textgraph.to_graph(dat)
 print(graph.summary())
+print()
 
 # Local speaking rate.
 textgraph.speaking_rate(graph, side='before', window=1000.0)

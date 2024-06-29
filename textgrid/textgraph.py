@@ -43,7 +43,7 @@ def to_graph(dat):
          'start', 'end', 'dur_ms']}
     edge_attrs = {'label': []}
 
-    print('Word nodes and edges ...')
+    # Word nodes ane edges.
     speaker_ = None
     word_index_ = None
     word_id2index = {}  # Map dataframe word_id -> vertex index.
@@ -70,7 +70,6 @@ def to_graph(dat):
         node_index += 1
 
     # Phone nodes and edges.
-    print('Phone nodes and edges ...')
     speaker_ = None
     word_index_ = None
     phone_index_ = None
@@ -89,6 +88,7 @@ def to_graph(dat):
         node_attrs['start'].append(row['start'])
         node_attrs['end'].append(row['end'])
         node_attrs['dur_ms'].append(row['dur_ms'])
+
         edges.append((node_index, word_index))
         edge_attrs['label'].append('word')
         edges.append((word_index, node_index))
