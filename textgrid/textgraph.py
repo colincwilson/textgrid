@@ -4,7 +4,7 @@ import re, sys
 import igraph
 import numpy as np
 import polars as pl
-#from collections import deque
+from collections import deque
 
 from .textgrid import combine_tiers
 from .textgrid import ARPABET_VOWELS
@@ -21,65 +21,96 @@ def to_graph(dat):
     # todo: check/fix 'turn' segmentation
     """
 
-    graph = igraph.Graph(n_vertices, edges)
+    graph = igraph.Graph()
 
     # Combine word and phone tiers.
     dat = combine_tiers(dat)
     print(dat)
     print(dat.columns)
 
-    # Word nodes and edges.
+    # Get words tiers.
     dat_word = dat[['filename', 'speaker', 'word', 'word_id', \
                     'word_start', 'word_end', 'word_dur_ms']] \
                 .unique() \
                 .sort(['filename', 'word_id'])
     print(dat_word)
 
+    # Nodes and edges with their attributes.
+    node_index = 0
+    edges = []
+    node_attrs = {key: [] for key in \
+        ['speaker', 'tier', 'word_id', 'label', \
+         'start', 'end', 'dur_ms']}
+    edge_attrs = {'label': []}
+
+    print('Word nodes and edges ...')
     speaker_ = None
-    word_ = None
-    word_index = {}  # Map dataframe word_id -> vertex index.
+    word_index_ = None
+    word_id2index = {}  # Map dataframe word_id -> vertex index.
     for row in dat_word.iter_rows(named=True):
         speaker = row['speaker']
         word_id = row['word_id']
-        word = graph.add_vertex( \
-            speaker=speaker, tier='word', word_id=word_id,
-            label=row['word'], start=row['word_start'],
-            end=row['word_end'], dur_ms=row['word_dur_ms'])
-        word_index[word_id] = word.index
+        node_attrs['speaker'].append(speaker)
+        node_attrs['tier'].append('word')
+        node_attrs['word_id'].append(word_id)
+        node_attrs['label'].append(row['word'])
+        node_attrs['start'].append(row['word_start'])
+        node_attrs['end'].append(row['word_end'])
+        node_attrs['dur_ms'].append(row['word_dur_ms'])
+        word_id2index[word_id] = node_index
         # note: insertion ordered preserved
-        if (word_ is not None) and (speaker == speaker_):
+        if (word_index_ is not None) and (speaker == speaker_):
             # todo: check 'sp', 'sil' intervals
-            graph.add_edge(word_, word, label='succ')
-            graph.add_edge(word, word_, label='prec')
+            edges.append((word_index_, node_index))
+            edge_attrs['label'].append('succ')
+            edges.append((node_index, word_index_))
+            edge_attrs['label'].append('prec')
         speaker_ = speaker
-        word_ = word
+        word_index_ = node_index
+        node_index += 1
 
     # Phone nodes and edges.
+    print('Phone nodes and edges ...')
     speaker_ = None
-    word_ = None
-    phone_ = None
+    word_index_ = None
+    phone_index_ = None
     phone_idx = 0  # Phone index within word.
     for row in dat.iter_rows(named=True):
         speaker = row['speaker']
         word_id = row['word_id']
-        word = graph.vs[word_index[word_id]]
+        word_index = word_id2index[word_id]
         # Reset phone_idx at word boundaries.
-        if word != word_:
+        if word_index != word_index_:
             phone_idx = 0
-        phone = graph.add_node( \
-            speaker=speaker, tier='phone', word_id=word_id,
-            label=row['phone'], start=row['start'],
-            end=row['end'], dur_ms=row['dur_ms'])
-        graph.add_edge(phon, word, label='word')
-        graph.add_edge(word, phon, label=f'phone{phone_idx}')
+        node_attrs['speaker'].append(speaker)
+        node_attrs['tier'].append('phone')
+        node_attrs['word_id'].append(word_id)
+        node_attrs['label'].append(row['phone'])
+        node_attrs['start'].append(row['start'])
+        node_attrs['end'].append(row['end'])
+        node_attrs['dur_ms'].append(row['dur_ms'])
+        edges.append((node_index, word_index))
+        edge_attrs['label'].append('word')
+        edges.append((word_index, node_index))
+        edge_attrs['label'].append(f'phone{phone_idx}')
         # note: insertion ordered preserved
-        if (phone_ is not None) and (speaker == speaker_):
-            graph.add_edge(phone_, phone, label='succ')
-            graph.add_edge(phone, phone_, label='prec')
+        if (phone_index_ is not None) and (speaker == speaker_):
+            edges.append((phone_index_, node_index))
+            edge_attrs['label'].append('succ')
+            edges.append((node_index, phone_index_))
+            edge_attrs['label'].append('prec')
         speaker_ = speaker
-        word_ = word
-        phone_ = phone
-        phone_idx += 1
+        word_index_ = word_index
+        phone_index_ = node_index
+        node_index += 1
+
+    # Create graph.
+    graph = igraph.Graph( \
+        node_index,
+        edges,
+        directed=True,
+        vertex_attrs=node_attrs,
+        edge_attrs=edge_attrs)
 
     return graph
 
@@ -104,7 +135,7 @@ def filter_nodes(graph, nodes=None, tier=None, label=None, regex=None, \
     """
     if graph is None:
         return []
-    if nodes is None
+    if nodes is None:
         nodes = list(graph.vs)
 
     ret = []
@@ -180,7 +211,7 @@ def get_adj(graph, node, reln='succ', skip=['sp', ''], max_sep=None):
     if max_sep is not None:
         max_sep_s = max_sep / 1000.0
     while 1:
-        edges = [e for e in node.out_edges if e['label'] == reln]
+        edges = [e for e in node.out_edges() if e['label'] == reln]
         if len(edges) == 0:
             return None
         node_adj = graph.vs[edges[0].target]

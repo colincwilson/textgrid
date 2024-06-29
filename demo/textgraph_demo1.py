@@ -1,5 +1,6 @@
 # docme
 import re, sys
+import igraph
 import networkx
 import polars as pl
 from pathlib import Path
@@ -14,7 +15,7 @@ grid_file = Path.home() / \
 dat = textgrid.read(grid_file)
 
 graph = textgraph.to_graph(dat)
-print(graph)
+print(graph.summary())
 
 # Local speaking rate.
 textgraph.speaking_rate(graph, side='before', window=1000.0)

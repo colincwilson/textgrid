@@ -31,8 +31,8 @@ def speaking_rate_calc(vowels, min_dur=500.0):
     n = len(vowels)
     if n == 0:
         return np.nan
-    min_time = np.min([v[1]['start'] for v in vowels])
-    max_time = np.max([v[1]['end'] for v in vowels])
+    min_time = np.min([v['start'] for v in vowels])
+    max_time = np.max([v['end'] for v in vowels])
     dur = (max_time - min_time)
     if dur < (min_dur / 1000.0):
         return np.nan
