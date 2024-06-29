@@ -38,15 +38,14 @@ def to_graph(dat):
     # Nodes and edges with their attributes.
     node_index = 0
     edges = []
-    node_attrs = {key: [] for key in \
-        ['speaker', 'tier', 'word_id', 'label', \
-         'start', 'end', 'dur_ms']}
+    node_attrs = {key: [] for key in ['speaker', 'tier', 'word_id', \
+        'label', 'start', 'end', 'dur_ms']}
     edge_attrs = {'label': []}
 
     # Word nodes ane edges.
     speaker_ = None
     word_index_ = None
-    word_id2index = {}  # Map dataframe word_id -> vertex index.
+    word_id2index = {}  # Map dataframe word_id -> node index.
     for row in dat_word.iter_rows(named=True):
         speaker = row['speaker']
         word_id = row['word_id']
