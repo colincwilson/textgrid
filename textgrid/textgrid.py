@@ -98,17 +98,26 @@ def write(dat, filename, speakers=None, tiers=None):
     return grid
 
 
-def _make_tiers(dat, speakers, tiers):
+def _make_tiers(dat, speakers=None, tiers=None):
     """ Make tier for each speaker x tier combo. """
     if speakers is None:
-        speakers = list(set(dat['speaker']))
+        if 'speaker' in dat.columns:
+            speakers = list(set(dat['speaker']))
+        else:
+            speakers = ['<null>']
     if tiers is None:
-        tiers = list(set(dat['tier']))
+        if 'tier' in dat.columns:
+            tiers = list(set(dat['tier']))
+        else:
+            tiers = ['label']
     ret = []
     for speaker in speakers:
+        dat1 = dat
+        if 'speaker' in dat.columns:
+            dat1 = dat1.filter(pl.col('speaker') == speaker)
         for tier in tiers:
-            dat1 = dat.filter((pl.col('speaker') == speaker)
-                              & (pl.col('tier') == tier))
+            if 'tier' in dat.columns:
+                dat1 = dat1.filter(pl.col('tier') == tier)
             if len(dat1) == 0:
                 continue
             ret.append(_make_tier(dat1, speaker, tier))
