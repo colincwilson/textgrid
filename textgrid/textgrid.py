@@ -102,25 +102,26 @@ def _make_tiers(dat, speakers=None, tiers=None):
     """ Make tier for each speaker x tier combo. """
     if speakers is None:
         if 'speaker' in dat.columns:
-            speakers = list(set(dat['speaker']))
+            speakers = dat['speaker'].unique(maintain_order=True)
         else:
             speakers = ['<null>']
     if tiers is None:
         if 'tier' in dat.columns:
-            tiers = list(set(dat['tier']))
+            tiers = dat['tier'].unique(maintain_order=True)
         else:
             tiers = ['label']
     ret = []
     for speaker in speakers:
-        dat1 = dat
+        dat_spkr = dat
         if 'speaker' in dat.columns:
-            dat1 = dat1.filter(pl.col('speaker') == speaker)
+            dat_spkr = dat.filter(pl.col('speaker') == speaker)
         for tier in tiers:
+            dat_spkr_tier = dat_spkr
             if 'tier' in dat.columns:
-                dat1 = dat1.filter(pl.col('tier') == tier)
-            if len(dat1) == 0:
+                dat_spkr_tier = dat_spkr.filter(pl.col('tier') == tier)
+            if len(dat_spkr_tier) == 0:
                 continue
-            ret.append(_make_tier(dat1, speaker, tier))
+            ret.append(_make_tier(dat_spkr_tier, speaker, tier))
     return ret
 
 
@@ -436,10 +437,12 @@ def main():
     grid2 = following(grid1, grid)
     print(grid2)
 
-    grid1 = grid1[[
-        'filename', 'speaker', 'tier', 'label', 'start_ms', 'end_ms', 'dur_ms'
-    ]]
-    grid2 = grid2[['speaker', 'tier', 'label', 'start_ms', 'end_ms', 'dur_ms']]
+    grid1 = grid1[[ \
+        'filename', 'speaker', 'tier', 'label',
+        'start_ms', 'end_ms', 'dur_ms']]
+    grid2 = grid2[[ \
+        'speaker', 'tier', 'label',
+        'start_ms', 'end_ms', 'dur_ms']]
     grid2.columns = ['_' + x for x in grid2.columns]
 
     grid12 = pl.concat([grid1, grid2], how='horizontal')
