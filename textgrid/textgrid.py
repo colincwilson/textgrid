@@ -1,5 +1,4 @@
-# Praat textgrids represented as polars dataframes and
-# networkx graphs.
+# Praat textgrid represented as a Polars dataframe.
 # Notes:
 # - Time units are in seconds (s) unless otherwise
 #   indicated as milliseconds (ms).
