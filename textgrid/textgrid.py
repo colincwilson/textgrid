@@ -152,7 +152,7 @@ def combine_tiers(dat):
         .filter(pl.col('tier') == 'words') \
         .rename({'label': 'word', 'start': 'word_start',
         'end': 'word_end', 'dur_ms': 'word_dur_ms'}) \
-        .drop(['tier', 'label']) \
+        .drop(['tier']) \
         .sort(['filename', 'word_start'])
 
     # Assign consecutive ids to words.
