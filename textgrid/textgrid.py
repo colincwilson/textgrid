@@ -41,7 +41,9 @@ def read(filename, fileEncoding="utf-8", verbose=True):
                 interval.text, interval.start_time, interval.end_time))
 
     dat = pl.DataFrame(dat, \
-        schema=['speaker', 'tier', 'label', 'start', 'end'])
+        schema=['speaker', 'tier', 'label', 'start', 'end'],
+        orient='row')
+
     dat = dat \
         .with_columns( \
             filename=pl.lit(filename),
@@ -147,9 +149,12 @@ def combine_tiers(dat):
     """
     Combine word and phone tiers.
     """
+    #print(dat.columns)
+    #print(dat['tier'].value_counts())
+
     # Word tier.
     dat_word = dat \
-        .filter(pl.col('tier') == 'words') \
+        .filter(pl.col('tier').str.contains('^word(s)?$')) \
         .rename({'label': 'word', 'start': 'word_start',
         'end': 'word_end', 'dur_ms': 'word_dur_ms'}) \
         .drop(['tier']) \
@@ -159,10 +164,11 @@ def combine_tiers(dat):
     dat_word = dat_word.with_columns( \
         pl.Series(name='word_id', \
             values=list(range(len(dat_word)))))
+    print(dat_word.head())
 
     # Phone tier.
     dat_phon = dat \
-        .filter(pl.col('tier') == 'phones') \
+        .filter(pl.col('tier').str.contains('^phon(e)?(s)?$')) \
         .rename({'label': 'phone'}) \
         .drop(['tier']) \
         .sort(['filename', 'start'])
