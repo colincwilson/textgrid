@@ -145,13 +145,10 @@ def _make_tier(dat, speaker, tier):
     return tier
 
 
-def combine_tiers(dat):
+def combine_tiers(dat, verbose=False):
     """
     Combine word and phone tiers.
     """
-    #print(dat.columns)
-    #print(dat['tier'].value_counts())
-
     # Word tier.
     dat_word = dat \
         .filter(pl.col('tier').str.contains('^word(s)?$')) \
@@ -164,7 +161,8 @@ def combine_tiers(dat):
     dat_word = dat_word.with_columns( \
         pl.Series(name='word_id', \
             values=list(range(len(dat_word)))))
-    print(dat_word.head())
+    if verbose:
+        print(dat_word.head())
 
     # Phone tier.
     dat_phon = dat \
