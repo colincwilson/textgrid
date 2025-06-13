@@ -42,7 +42,7 @@ def to_graph(dat):
         'label', 'start', 'end', 'dur_ms']}
     edge_attrs = {'label': []}
 
-    # Word nodes ane edges.
+    # Word nodes and edges.
     speaker_ = None
     word_index_ = None
     word_id2index = {}  # Map dataframe word_id -> node index.
