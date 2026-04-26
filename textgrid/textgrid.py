@@ -74,6 +74,10 @@ def read(filename, encoding="utf-8", verbose=True):
     return dat
 
 
+# Alias.
+read_textgrid = import_textgrid = read
+
+
 def write(dat, filename, speakers=None, tiers=None):
     """
     Write polars data frame as TextGrid.
@@ -97,6 +101,10 @@ def write(dat, filename, speakers=None, tiers=None):
     # checkme: format
     tgt.io.write_to_file(grid, filename, format='long')
     return grid
+
+
+# Alias.
+write_textgrid = export_textgrid = write
 
 
 def _make_tiers(dat, speakers=None, tiers=None):
