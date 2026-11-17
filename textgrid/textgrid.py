@@ -1,7 +1,7 @@
 # Praat textgrid represented as a Polars dataframe.
 # Notes:
 # - Time units are in seconds (s) unless otherwise
-#   indicated as milliseconds (ms).
+#   specified as in milliseconds (ms).
 #
 
 import re, sys
@@ -16,6 +16,8 @@ import tgt
 ARPABET_VOWELS = '^[AEIOUaeiou].[012]?$'
 #ARPABET_VOWELS_STRESS = '^[AEIOUaeiou].[012]$'
 MFA_TIERS = '^(.+?)( - utterance)? - ((phone|word|utterance)s?)$'
+WORD_TIER = '^word(s)?$'
+PHON_TIER = '^phon(e)?(s)?$'
 
 # # # # # # # # # #
 
@@ -159,7 +161,7 @@ def combine_tiers(dat, verbose=False):
     """
     # Word tier.
     dat_word = dat \
-        .filter(pl.col('tier').str.contains('^word(s)?$')) \
+        .filter(pl.col('tier').str.contains(WORD_TIER)) \
         .rename({'label': 'word', 'start': 'word_start',
         'end': 'word_end', 'dur_ms': 'word_dur_ms'}) \
         .drop(['tier']) \
@@ -174,48 +176,31 @@ def combine_tiers(dat, verbose=False):
 
     # Phone tier.
     dat_phon = dat \
-        .filter(pl.col('tier').str.contains('^phon(e)?(s)?$')) \
+        .filter(pl.col('tier').str.contains(PHON_TIER)) \
         .rename({'label': 'phone'}) \
         .drop(['tier']) \
         .sort(['filename', 'start'])
 
-    # Assign non-decreasing word ids to phones.
-    # todo: index phones within words
-    i = 0
-    n = len(dat_phon)
-    word_ids = [-1] * n
-    for word in dat_word.iter_rows(named=True):
-        word_id = word['word_id']
-        # checkme: use filtering instead?
-        while i < n:
-            phon = dat_phon.row(i, named=True)
-            if phon['filename'] != word['filename']:
-                break
-            if phon['speaker'] != word['speaker']:
-                break
-            if phon['start'] < word['word_start']:
-                i += 1
-                continue
-            if phon['end'] <= word['word_end']:
-                word_ids[i] = word_id
-                i += 1
-                continue
-            break
+    # Merge words and phones on filename, speaker, and time overlap.
+    ret = dat_phon.join_where( \
+        dat_word,
+        pl.col('filename') == pl.col('filename'),
+        pl.col('speaker') == pl.col('speaker'),
+        pl.col('start') >= pl.col('word_start'),
+        pl.col('end') <= pl.col('word_end')
+    )
 
-    dat_phon = dat_phon.with_columns( \
-        pl.Series(name='word_id', values=word_ids))
+    # # Report phones with missing word ids.
+    # dat_miss = dat_phon.filter(pl.col('word_id') == -1)
+    # if len(dat_miss) > 0:
+    #     print(f'Phones missing word ids ({len(dat_miss)}):')
+    #     print(dat_miss)
 
-    # Report phones with missing word ids.
-    dat_miss = dat_phon.filter(pl.col('word_id') == -1)
-    if len(dat_miss) > 0:
-        print(f'Phones missing word ids ({len(dat_miss)}):')
-        print(dat_miss)
-
-    # Merge words and phones on word ids.
-    ret = dat_word \
-        .join(dat_phon, \
-            on=['filename', 'speaker', 'word_id']) \
-        .sort(['filename', 'word_start', 'start'])
+    # # Merge words and phones on word ids.
+    # ret = dat_word \
+    #     .join(dat_phon, \
+    #         on=['filename', 'speaker', 'word_id']) \
+    #     .sort(['filename', 'word_start', 'start'])
 
     # Reorder columns.
     ret = ret[['filename', 'speaker', 'word', 'word_id', \
@@ -376,7 +361,7 @@ def speaking_rate_before(dat1, dat, window=1000.0):
         window: duration of window (default = 1000.0) [ms]
     """
     dat = dat.filter( \
-        pl.col('tier') == 'phones',
+        pl.col('tier').str.contains(PHON_TIER),
         pl.col('label').str.contains(ARPABET_VOWELS))
 
     val = []
@@ -406,7 +391,7 @@ def speaking_rate_after(dat1, dat, window=1000.0):
         window: duration of window (default = 1000.0) [ms]
     """
     dat = dat.filter( \
-        pl.col('tier') == 'phones',
+        pl.col('tier').str.contains(PHON_TIER),
         pl.col('label').str.contains(ARPABET_VOWELS))
 
     val = []
