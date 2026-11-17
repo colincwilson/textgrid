@@ -11,7 +11,7 @@ from .textgrid import ARPABET_VOWELS
 from .util import *
 
 
-def to_graph(dat):
+def to_graph(grid_df):
     """
     Convert dataframe to graph with word and phone 
     intervals as nodes, bidirectional edges between 
@@ -24,16 +24,16 @@ def to_graph(dat):
     graph = igraph.Graph()
 
     # Combine word and phone tiers.
-    dat = combine_tiers(dat)
-    print(dat)
-    print(dat.columns)
+    grid_df = combine_tiers(grid_df)
+    print(grid_df)
+    print(grid_df.columns)
 
     # Get words tiers.
-    dat_word = dat[['filename', 'speaker', 'word', 'word_id', \
+    word_df = grid_df[['filename', 'speaker', 'word', 'word_id', \
                     'word_start', 'word_end', 'word_dur_ms']] \
                 .unique() \
                 .sort(['filename', 'word_id'])
-    print(dat_word)
+    print(word_df)
 
     # Nodes and edges with their attributes.
     node_index = 0
@@ -46,7 +46,7 @@ def to_graph(dat):
     speaker_ = None
     word_index_ = None
     word_id2index = {}  # Map dataframe word_id -> node index.
-    for row in dat_word.iter_rows(named=True):
+    for row in word_df.iter_rows(named=True):
         speaker = row['speaker']
         word_id = row['word_id']
         node_attrs['speaker'].append(speaker)
@@ -73,7 +73,7 @@ def to_graph(dat):
     word_index_ = None
     phone_index_ = None
     phone_idx = 0  # Phone index within word.
-    for row in dat.iter_rows(named=True):
+    for row in grid_df.iter_rows(named=True):
         speaker = row['speaker']
         word_id = row['word_id']
         word_index = word_id2index[word_id]
@@ -116,11 +116,14 @@ def to_graph(dat):
 
 def to_dat(graph):
     """ Convert graph to dataframe. """
-    dat = [v.attributes() for v in graph.vs]
-    dat = pl.DataFrame(dat)
-    print(dat)
-    return dat
+    grid_df = [v.attributes() for v in graph.vs]
+    grid_df = pl.DataFrame(grid_df)
+    print(grid_df)
+    return grid_df
 
+
+# Alias.
+to_df = to_dat
 
 # # # # # # # # # #
 
@@ -184,7 +187,7 @@ def get_nodes(graph, **kwargs):
 def node_access_decorator(func):
     """
     Decorator for node access functions: handle NAs,
-    lift to lists, conver nodes to ids.
+    lift to lists, convert nodes to ids.
     """
 
     def _wrapper(graph, node, **kwargs):
