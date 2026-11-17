@@ -29,7 +29,7 @@ def read(filename, encoding="utf-8", verbose=True):
     """
     filename = str(filename)
     grid = tgt.io.read_textgrid(filename, encoding=encoding)
-    dat = []
+    grid_df = []
     for tier in grid.tiers:
         tier_name = tier.name
         if re.search(MFA_TIERS, tier_name):
@@ -39,14 +39,14 @@ def read(filename, encoding="utf-8", verbose=True):
             speaker = '<null>'
 
         for interval in tier.annotations:
-            dat.append((speaker, tier_name,  \
+            grid_df.append((speaker, tier_name,  \
                 interval.text, interval.start_time, interval.end_time))
 
-    dat = pl.DataFrame(dat, \
+    grid_df = pl.DataFrame(grid_df, \
         schema=['speaker', 'tier', 'label', 'start', 'end'],
         orient='row')
 
-    dat = dat \
+    grid_df = grid_df \
         .with_columns( \
             filename=pl.lit(filename),
             dur_ms=1000.0*(pl.col('end') - pl.col('start'))) \
@@ -55,32 +55,32 @@ def read(filename, encoding="utf-8", verbose=True):
             pl.col('end').round(3),
             pl.col('dur_ms').round(0))
 
-    dat = dat[[ \
+    grid_df = grid_df[[ \
         'filename', 'speaker', 'tier', 'label',
         'start', 'end', 'dur_ms']]
-    dat = dat.sort(['start', 'speaker'])
+    grid_df = grid_df.sort(['start', 'speaker'])
 
     if verbose:
-        speakers = dat['speaker'].unique().to_list()
-        tiers = dat['tier'].unique().to_list()
-        n = len(dat)
+        speakers = grid_df['speaker'].unique().to_list()
+        tiers = grid_df['tier'].unique().to_list()
+        n = len(grid_df)
 
         print()
         print('-' * 20)
         print(f'* Textgrid: {filename}\n'
               f'* Speakers: {speakers}\n'
               f'* Tiers: {tiers}\n')
-        print(f'dat {dat}')
+        print(f'* Grid DF:\n{grid_df}')
         print()
 
-    return dat
+    return grid_df
 
 
 # Alias.
 read_textgrid = import_textgrid = read
 
 
-def write(dat, filename, speakers=None, tiers=None):
+def write(grid_df, filename, speakers=None, tiers=None):
     """
     Write polars data frame as TextGrid.
         filename (str/path): output file
@@ -90,11 +90,11 @@ def write(dat, filename, speakers=None, tiers=None):
 
     # Make textgrid.
     start_time = 0.0
-    end_time = dat['end'].max()
+    end_time = grid_df['end'].max()
     grid = tgt.core.TextGrid(filename)
 
     # Make tiers.
-    tiers = _make_tiers(dat, speakers, tiers)
+    tiers = _make_tiers(grid_df, speakers, tiers)
     for tier in tiers:
         tier.start_time = start_time
         tier.end_time = end_time
@@ -109,41 +109,41 @@ def write(dat, filename, speakers=None, tiers=None):
 write_textgrid = export_textgrid = write
 
 
-def _make_tiers(dat, speakers=None, tiers=None):
+def _make_tiers(grid_df, speakers=None, tiers=None):
     """ Make tier for each speaker x tier combo. """
     if speakers is None:
-        if 'speaker' in dat.columns:
-            speakers = dat['speaker'].unique(maintain_order=True)
+        if 'speaker' in grid_df.columns:
+            speakers = grid_df['speaker'].unique(maintain_order=True)
         else:
             speakers = ['<null>']
     if tiers is None:
-        if 'tier' in dat.columns:
-            tiers = dat['tier'].unique(maintain_order=True)
+        if 'tier' in grid_df.columns:
+            tiers = grid_df['tier'].unique(maintain_order=True)
         else:
             tiers = ['label']
     ret = []
     for speaker in speakers:
-        dat_spkr = dat
-        if 'speaker' in dat.columns:
-            dat_spkr = dat.filter(pl.col('speaker') == speaker)
+        spkr = grid_df
+        if 'speaker' in grid_df.columns:
+            spkr_df = grid_df.filter(pl.col('speaker') == speaker)
         for tier in tiers:
-            dat_spkr_tier = dat_spkr
-            if 'tier' in dat.columns:
-                dat_spkr_tier = dat_spkr.filter(pl.col('tier') == tier)
-            if len(dat_spkr_tier) == 0:
+            spkr_tier_df = spkr_df
+            if 'tier' in grid_df.columns:
+                spkr_tier_df = spkr_df.filter(pl.col('tier') == tier)
+            if len(spkr_tier_df) == 0:
                 continue
-            ret.append(_make_tier(dat_spkr_tier, speaker, tier))
+            ret.append(_make_tier(spkr_tier_df, speaker, tier))
     return ret
 
 
-def _make_tier(dat, speaker, tier):
+def _make_tier(grid_df, speaker, tier):
     """ Make tier for one speaker x tier combo. """
     if speaker == '<null>':
         tier_name = tier
     else:
         tier_name = f'{speaker} - {tier}'
     tier = tgt.core.IntervalTier(name=tier_name)
-    for row in dat.rows(named=True):
+    for row in grid_df.rows(named=True):
         interval = tgt.core.Interval( \
             row['start'],
             row['end'],
@@ -155,12 +155,12 @@ def _make_tier(dat, speaker, tier):
     return tier
 
 
-def combine_tiers(dat, verbose=False):
+def combine_tiers(grid_df, verbose=False):
     """
     Combine word and phone tiers.
     """
     # Word tier.
-    dat_word = dat \
+    word_df = grid_df \
         .filter(pl.col('tier').str.contains(WORD_TIER)) \
         .rename({'label': 'word', 'start': 'word_start',
         'end': 'word_end', 'dur_ms': 'word_dur_ms'}) \
@@ -168,22 +168,22 @@ def combine_tiers(dat, verbose=False):
         .sort(['filename', 'word_start'])
 
     # Assign consecutive ids to words.
-    dat_word = dat_word.with_columns( \
+    word_df = word_df.with_columns( \
         pl.Series(name='word_id', \
-            values=list(range(len(dat_word)))))
+            values=list(range(len(word_df)))))
     if verbose:
-        print(dat_word.head())
+        print(word_df.head())
 
     # Phone tier.
-    dat_phon = dat \
+    phon_df = grid_df \
         .filter(pl.col('tier').str.contains(PHON_TIER)) \
         .rename({'label': 'phone'}) \
         .drop(['tier']) \
         .sort(['filename', 'start'])
 
     # Merge words and phones on filename, speaker, and time overlap.
-    ret = dat_phon.join_where( \
-        dat_word,
+    ret = phon_df.join_where( \
+        word_df,
         pl.col('filename') == pl.col('filename'),
         pl.col('speaker') == pl.col('speaker'),
         pl.col('start') >= pl.col('word_start'),
@@ -207,211 +207,304 @@ def combine_tiers(dat, verbose=False):
                'word_start', 'word_end', 'word_dur_ms', \
                'phone', 'start', 'end', 'dur_ms']]
 
+    # Sort rows by filename, speaker, word start, and phone start.
+    ret = ret.sort(['filename', 'speaker', 'word_start', 'start'])
+
     return ret
 
 
-def intervals_at(dat, timepoint, speakers=None, tiers=None):
+def intervals_at(grid_df, timepoint, speakers=None, tiers=None):
     """
     Data frame of intervals overlapping timepoint (inclusive) 
     for all speakers or specified speakers, on all tiers or 
     specified tiers.
-        dat: polars dataframe
+        grid_df: polars dataframe
         timepoint (float): time point
         speakers (list): speakers to include (None => all)
         tier (str): tiers to include (None => all)
     """
-    dat1 = dat
+    grid_df1 = grid_df
     if speakers is not None:
-        dat1 = dat1.filter(pl.col('speaker').is_in(speakers))
+        grid_df1 = grid_df1.filter(pl.col('speaker').is_in(speakers))
     if tiers is not None:
-        dat1 = dat1.filter(pl.col('tier').is_in(tiers))
-    dat1 = dat1.filter((pl.col('start') <= timepoint),
-                       (pl.col('end') >= timepoint))
-    return dat1
+        grid_df1 = grid_df1.filter(pl.col('tier').is_in(tiers))
+    grid_df1 = grid_df1.filter((pl.col('start') <= timepoint),
+                               (pl.col('end') >= timepoint))
+    return grid_df1
 
 
-def intervals_between(dat, start, end, speakers=None, tiers=None):
+def intervals_between(grid_df, start, end, speakers=None, tiers=None):
     """
     Data frame of intervals between timepoints (inclusive) 
     for all speakers or specified speakers, on all tiers or 
     specified tiers.
-        dat: polars dataframe
+        grid_df: polars dataframe
         start (float): start time
         end (float): end time
         speakers (list): speakers to include (None => all)
         tiers (str): tiers to include (None => all)
     """
-    dat1 = dat
+    grid_df1 = grid_df
     if speakers is not None:
-        dat1 = dat1.filter( \
+        grid_df1 = grid_df1.filter( \
             pl.col('speaker').is_in(speakers))
     if tier is not None:
-        dat1 = dat1.filter( \
+        grid_df1 = grid_df1.filter( \
             pl.col('tier').is_in(tiers))
-    dat1 = dat1.filter( \
+    grid_df1 = grid_df1.filter( \
         (pl.col('start') >= start),
         (pl.col('end') <= end))
-    return dat1
+    return grid_df1
 
 
-def preceding(dat1, dat, \
+def preceding(grid_df1, grid_df2, \
     tier=None, skip=['sp', ''], pattern='', max_sep=500.0):
     """
-    Get closest preceding interval (row) in dat with the same 
-    filename, same speaker, and (by default) same tier for each 
-    interval (row) in dat1. Optionally specify tier of matches. 
-    Skip designated labels, include only labels that match 
+    For each interval (row) in grid_df1, get closest preceding interval
+    (row) in grid_df2 with matching filename, speaker, and (by default)
+    tier. Optionally specify tier of matches.
+    Skip designated labels, include only labels that match
     pattern, and limit search by maximum separation [ms].
+    todo: use polars join_asof() with strategy="nearest"
     """
     if tier is not None:
-        dat = dat.filter(pl.col('tier') == tier)
+        grid_df2 = grid_df2.filter(pl.col('tier') == tier)
 
-    dat = dat.filter( \
+    grid_df2 = grid_df2.filter( \
         ~pl.col('label').is_in(skip),
         pl.col('label').str.contains(pattern))
 
-    dats = []
-    missing = dat.clear(n=1)
+    grid_df = []
+    missing = grid_df2.clear(n=1)
     max_sep_s = max_sep / 1000.0
-    for row in dat1.iter_rows(named=True):
+    for row in grid_df1.iter_rows(named=True):
         if (row['filename'] is None) or (row['speaker'] is None) \
             or (row['tier'] is None) or (row['start'] is None):
             dats.append(missing)
             continue
 
-        dat_ = dat.filter( \
+        grid_df2_ = grid_df2.filter( \
             pl.col('filename') == row['filename'],
             pl.col('speaker') == row['speaker'],
             pl.col('start') <= row['start'],
             pl.col('start') >= (row['start'] - max_sep_s))
 
         if tier is None:
-            dat_ = dat_.filter( \
+            grid_df2_ = grid_df2_.filter( \
                 pl.col('tier') == row['tier'])
 
-        if len(dat_) == 0:
-            dats.append(missing)
+        if len(grid_df2_) == 0:
+            grid_df.append(missing)
         else:
-            dats.append(dat_.tail(1))
+            grid_df.append(grid_df2_.tail(1))
 
-    ret = pl.concat(dats)
+    ret = pl.concat(grid_df)
     return ret
 
 
-def following(dat1, dat, \
+def following(grid_df1, grid_df2, \
     tier=None, skip=['sp', ''], pattern='', max_sep=500.0):
     """
-    Get closest following interval (row) in dat with the same 
-    filename, same speaker, and (by default) same tier for each 
-    interval (row) in dat1. Optionally specify tier of matches. 
+    For each interval (row) in grid_df1, get closest following interval
+    (row) in grid_df2 with matching filename, speaker, and (by default) tier. Optionally specify tier of matches.
     Skip designated labels, include only labels that match 
     pattern, and limit search by maximum separation [ms].
+    todo: use polars join_asof() with strategy="nearest"
     """
     if tier is not None:
-        dat = dat.filter(pl.col('tier') == tier)
+        grid_df2 = grid_df2.filter(pl.col('tier') == tier)
 
-    dat = dat.filter( \
+    grid_df2 = grid_df2.filter( \
         ~pl.col('label').is_in(skip),
         pl.col('label').str.contains(pattern))
 
-    dats = []
-    missing = dat.clear(n=1)
+    grid_df = []
+    missing = grid_df2.clear(n=1)
     max_sep_s = max_sep / 1000.0
-    for row in dat1.iter_rows(named=True):
+    for row in grid_df1.iter_rows(named=True):
         if (row['filename'] is None) or (row['speaker'] is None) \
             or (row['tier'] is None) or (row['end'] is None):
-            dats.append(missing)
+            grid_df.append(missing)
             continue
 
-        dat_ = dat.filter( \
+        grid_df2_ = grid_df2.filter( \
             pl.col('filename') == row['filename'],
             pl.col('speaker') == row['speaker'],
             pl.col('end') >= row['end'],
             pl.col('end') <= (row['end'] + max_sep_s))
 
         if tier is None:
-            dat_ = dat_.filter(pl.col('tier') == row['tier'])
+            grid_df2_ = grid_df2_.filter(pl.col('tier') == row['tier'])N)) 
 
-        if len(dat_) == 0:
-            dats.append(missing)
+        if len(grid_df2_) == 0:
+            grid_df.append(missing)
         else:
-            dats.append(dat_.head(1))
+            grid_df.append(grid_df2_.head(1))
 
-    ret = pl.concat(dats)
+    ret = pl.concat(grid_df)
     return ret
 
 
-def speaking_rate(dat1, dat, window=1000.0, side='before'):
+def preceding_word(grid_df, word_tier='word'):
     """
-    Local speaking rate (vowels/second) in dat, before or 
-    after each interval (row) in dat1, within window of
-    specified duration [ms].
+    Code preceding words with matching filename and speaker.
+    Apply to result of combine_tiers().
+    """
+    word_prec = f'{word_tier}_prec'
+
+    grid_df = grid_df.with_columns(
+        pl.col(word_tier).shift(1).alias(word_prec))
+
+    grid_df = grid_df.with_columns(
+        pl.when((pl.col('filename') == pl.col('filename').shift(1)) & (pl.col('speaker') == pl.col('speaker').shift(1))) \
+            .then(pl.col(word_prec)) \
+            .otherwise(pl.lit(None)) \
+            .alias(word_prec))
+    return grid_df
+
+
+def following_word(grid_df, word_tier='word'):
+    """
+    Code following words with matching filename and speaker.
+    Apply to result of combine_tiers().
+    """
+    word_succ = f'{word_tier}_succ'
+
+    grid_df = grid_df.with_columns(
+        pl.col(word_tier).shift(-1).alias(word_succ))
+
+    grid_df = grid_df.with_columns(
+        pl.when((pl.col('filename') == pl.col('filename').shift(-1)) & (pl.col('speaker') == pl.col('speaker').shift(-1))) \
+            .then(pl.col(word_succ)) \
+            .otherwise(pl.lit(None)) \
+            .alias(word_succ))
+    return grid_df
+
+
+def preceeding_phon(grid_df, phon_tier='phone'):
+    """
+    Code preceding phones with matching filename and speaker, marking
+    that they belong to different words with '#'.
+    Apply to result of combine_tiers().
+    """
+    phon_prec = f'{phon_tier}_prec'
+
+    grid_df = grid_df.with_columns( \
+        pl.col(phon_tier).shift(1).alias(phon_prec))
+
+    grid_df = grid_df.with_columns(
+        pl.when(pl.col('word_id') == pl.col('word_id').shift(1)) \
+            .then(pl.col(phon_prec)) \
+            .otherwise(pl.col(phon_prec) + ' #') \
+            .alias(phon_prec))
+
+    grid_df = grid_df.with_columns(
+        pl.when(pl.when((pl.col('filename') == pl.col('filename').shift(1)) & (pl.col('speaker') == pl.col('speaker').shift(1)))) \
+            .then(pl.col(phon_prec)) \
+            .otherwise(pl.lit(None)) \
+            .alias(phon_prec))
+
+    return grid_df
+
+
+def following_phon(grid_df, phon_tier='phone'):
+    """
+    Code following phones, indicating whether they belong
+    to the same word with '#'. Apply to result of combine_tiers().
+    """
+    phon_succ = f'{phon_tier}_succ'
+
+    grid_df = grid_df.with_columns(pl.col('phone').shift(-1).alias(phon_suc))
+
+    grid_df = grid_df.with_columns(
+        pl.when(pl.col('word_id') == pl.col('word_id').shift(-1)) \
+            .then(phon_succ) \
+            .otherwise('# '+ pl.col(phon_succ)) \
+            .alias(phon_succ))
+
+    grid_df = grid_df.with_columns(
+        pl.when(pl.when((pl.col('filename') == pl.col('filename').shift(-1)) & (pl.col('speaker') == pl.col('speaker').shift(-1)))) \
+            .then(pl.col(phon_succ)) \
+            .otherwise(pl.lit(None)) \
+            .alias(phon_succ))
+
+    return grid_df
+
+
+def speaking_rate(grid_df1, grid_df2, window=1000.0, side='before'):
+    """
+    Local speaking rate (vowels/second) before or after
+    each interval (row) in grid_df1 based on vowel count
+    in grid_df2 within window of specified duration [ms].
+    todo: reuse grid_df1 if grid_df2 is unspecified
     """
     if side == 'before':
-        return speaking_rate_before(dat1, dat, window)
+        return speaking_rate_before(grid_df1, grid_df2, window)
     if side == 'after':
-        return speaking_rate_after(dat1, dat, window)
+        return speaking_rate_after(grid_df1, grid_df2, window)
     return None
 
 
-def speaking_rate_before(dat1, dat, window=1000.0):
+def speaking_rate_before(grid_df1, grid_df2, window=1000.0):
     """
-    Speaking rate (vowels/second) in dat before each 
-    interval (row) in dat1 within specified window.
+    Local speaking rate (vowels/second) before each
+    interval (row) in grid_df1 calculated from vowel count
+    in grid_df2 within window of specified duration [ms].
         window: duration of window (default = 1000.0) [ms]
     """
-    dat = dat.filter( \
+    grid_df2 = grid_df2.filter( \
         pl.col('tier').str.contains(PHON_TIER),
         pl.col('label').str.contains(ARPABET_VOWELS))
 
     val = []
     window_s = window / 1000.0
-    for row in dat1.iter_rows(named=True):
-        dat_ = dat.filter( \
+    for row in grid_df1.iter_rows(named=True):
+        grid_df2_ = grid_df2.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
                 pl.col('end') <= row['start'],
                 (row['start'] - pl.col('start')) <= window_s)
-        n = len(dat_)
+        n = len(grid_df2_)
         if n == 0:
             val.append(np.nan)
         else:
             val.append(1000.0 * float(n) / window)
 
-    dat1 = dat1.with_columns( \
+    grid_df1 = grid_df1.with_columns( \
         pl.Series(name='rate_before', values=val))
 
-    return dat1
+    return grid_df1
 
 
-def speaking_rate_after(dat1, dat, window=1000.0):
+def speaking_rate_after(grid_df1, grid_df2, window=1000.0):
     """
-    Speaking rate (vowels/second) in dat after each
-    interval (row) in dat1 within specified window.
+    Local speaking rate (vowels/second) after each
+    interval (row) in grid_df1 calculated from vowel count
+    in grid_df2 within window of specified duration [ms].
         window: duration of window (default = 1000.0) [ms]
     """
-    dat = dat.filter( \
+    grid_df2 = grid_df2.filter( \
         pl.col('tier').str.contains(PHON_TIER),
         pl.col('label').str.contains(ARPABET_VOWELS))
 
     val = []
     window_s = window / 1000.0
-    for row in dat1.iter_rows(named=True):
-        dat_ = dat.filter( \
+    for row in grid_df1.iter_rows(named=True):
+        grid_df2_ = grid_df2.filter( \
                 pl.col('filename') == row['filename'],
                 pl.col('speaker') == row['speaker'],
                 pl.col('start') >= row['end'],
                 (pl.col('end') - row['end']) <= window_s)
-        n = len(dat_)
+        n = len(grid_df2_)
         if n == 0:
             val.append(np.nan)
         else:
             val.append(float(n) / window_s)
 
-    dat1 = dat1.with_columns( \
+    grid_df1 = grid_df1.with_columns( \
         pl.Series(name='rate_after', values=val))
 
-    return dat1
+    return grid_df1
 
 
 # Test.
@@ -420,31 +513,31 @@ def main():
     import seaborn as sns
 
     grid_file = Path.home() / \
-        'Sounds/WhiteHousePressBriefings/data2/mfa_out/11⧸20⧸23： Press Briefing by Press Secretary Karine Jean-Pierre [FYZztiGyz4g].TextGrid'
-    grid = read(grid_file)
+        'Sounds/WhiteHousePressBriefings/example2/11⧸20⧸23： Press Briefing by Press Secretary Karine Jean-Pierre [FYZztiGyz4g].TextGrid'
+    grid_df = read(grid_file)
 
     # Tokens of 'the'.
-    grid1 = grid.filter( \
+    grid_df1 = grid_df.filter( \
         pl.col('tier') == 'words',
         pl.col('label') == 'the')
-    print(grid1)
 
     # Following words.
-    grid2 = following(grid1, grid)
-    print(grid2)
+    grid_df2 = following(grid_df1, grid_df)
+    print(grid_df2)
 
-    grid1 = grid1[[ \
+    grid_df1 = grid_df1[[ \
         'filename', 'speaker', 'tier', 'label',
-        'start_ms', 'end_ms', 'dur_ms']]
-    grid2 = grid2[[ \
+        'start', 'end', 'dur_ms']]
+
+    grid_df2 = grid_df2[[ \
         'speaker', 'tier', 'label',
-        'start_ms', 'end_ms', 'dur_ms']]
-    grid2.columns = ['_' + x for x in grid2.columns]
+        'start', 'end', 'dur_ms']]
+    grid_df2.columns = ['_' + x for x in grid_df2.columns]  # fixme
 
-    grid12 = pl.concat([grid1, grid2], how='horizontal')
-    print(grid12)
+    grid_df12 = pl.concat([grid_df1, grid_df2], how='horizontal_extend')
+    print(grid_df12)
 
-    sns.scatterplot(x='dur_ms', y='_dur_ms', data=grid12)
+    sns.scatterplot(x='dur_ms', y='_dur_ms', data=grid_df12)
     plt.show()
 
 
