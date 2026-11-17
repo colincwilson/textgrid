@@ -6,9 +6,9 @@ import numpy as np
 import polars as pl
 from collections import deque
 
-from .textgrid import combine_tiers
-from .textgrid import ARPABET_VOWELS
-from .util import *
+from textgrid import combine_tiers
+from textgrid import ARPABET_VOWELS
+from util import *
 
 
 def to_graph(grid_df):

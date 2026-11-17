@@ -334,7 +334,7 @@ def following(grid_df1, grid_df2, \
             pl.col('end') <= (row['end'] + max_sep_s))
 
         if tier is None:
-            grid_df2_ = grid_df2_.filter(pl.col('tier') == row['tier'])N)) 
+            grid_df2_ = grid_df2_.filter(pl.col('tier') == row['tier'])
 
         if len(grid_df2_) == 0:
             grid_df.append(missing)
@@ -352,8 +352,7 @@ def preceding_word(grid_df, word_tier='word'):
     """
     word_prec = f'{word_tier}_prec'
 
-    grid_df = grid_df.with_columns(
-        pl.col(word_tier).shift(1).alias(word_prec))
+    grid_df = grid_df.with_columns(pl.col(word_tier).shift(1).alias(word_prec))
 
     grid_df = grid_df.with_columns(
         pl.when((pl.col('filename') == pl.col('filename').shift(1)) & (pl.col('speaker') == pl.col('speaker').shift(1))) \
