@@ -1,7 +1,7 @@
 # Praat textgrid represented as a Polars dataframe.
-# Notes:
+# Note:
 # - Time units are in seconds (s) unless otherwise
-#   specified as in milliseconds (ms).
+#   specified as milliseconds (ms).
 #
 
 import re, sys
@@ -13,8 +13,9 @@ import tgt
 # # # # # # # # # #
 
 # Regexes.
-ARPABET_VOWELS = '^[AEIOUaeiou].[012]?$'
-#ARPABET_VOWELS_STRESS = '^[AEIOUaeiou].[012]$'
+SILENCE = '^(SIL|SP|sil|sp)$'
+ARPABET_VOWELS = '^[AEIOUaeiou].[012]?$'  # Stress optional.
+ARPABET_VOWELS_STRESS = '^[AEIOUaeiou].[012]$'
 MFA_TIERS = '^(.+?)( - utterance)? - ((phone|word|utterance)s?)$'
 WORD_TIER = '^word(s)?$'
 PHON_TIER = '^phon(e)?(s)?$'
@@ -58,7 +59,7 @@ def read(filename, encoding="utf-8", verbose=True):
     grid_df = grid_df[[ \
         'filename', 'speaker', 'tier', 'label',
         'start', 'end', 'dur_ms']]
-    grid_df = grid_df.sort(['start', 'speaker'])
+    grid_df = grid_df.sort(['filename', 'start', 'speaker'])
 
     if verbose:
         speakers = grid_df['speaker'].unique().to_list()
@@ -182,7 +183,7 @@ def combine_tiers(grid_df, verbose=False):
         .sort(['filename', 'start'])
 
     # Merge words and phones on filename, speaker, and time overlap.
-    ret = phon_df.join_where( \
+    combo_df = phon_df.join_where( \
         word_df,
         pl.col('filename') == pl.col('filename'),
         pl.col('speaker') == pl.col('speaker'),
@@ -203,14 +204,15 @@ def combine_tiers(grid_df, verbose=False):
     #     .sort(['filename', 'word_start', 'start'])
 
     # Reorder columns.
-    ret = ret[['filename', 'speaker', 'word', 'word_id', \
-               'word_start', 'word_end', 'word_dur_ms', \
-               'phone', 'start', 'end', 'dur_ms']]
+    combo_df = combo_df[[
+        'filename', 'speaker', 'word', 'word_id', 'word_start', 'word_end',
+        'word_dur_ms', 'phone', 'start', 'end', 'dur_ms'
+    ]]
 
-    # Sort rows by filename, speaker, word start, and phone start.
-    ret = ret.sort(['filename', 'speaker', 'word_start', 'start'])
+    # Sort by filename, word start, and phone start, speaker
+    combo_df = combo_df.sort(['filename', 'word_start', 'start', 'speaker'])
 
-    return ret
+    return combo_df
 
 
 def intervals_at(grid_df, timepoint, speakers=None, tiers=None):
@@ -352,13 +354,19 @@ def preceding_word(grid_df, word_tier='word'):
     """
     word_prec = f'{word_tier}_prec'
 
-    grid_df = grid_df.with_columns(pl.col(word_tier).shift(1).alias(word_prec))
+    word_df = grid_df[['filename', 'speaker', word_tier, 'word_id']]
+    word_df = word_df.unique(maintain_order=True)
+    word_df = word_df.with_columns( \
+        pl.col(word_tier).shift(1).alias(word_prec))
+    word_df = word_df.drop(word_tier)
 
-    grid_df = grid_df.with_columns(
-        pl.when((pl.col('filename') == pl.col('filename').shift(1)) & (pl.col('speaker') == pl.col('speaker').shift(1))) \
-            .then(pl.col(word_prec)) \
-            .otherwise(pl.lit(None)) \
-            .alias(word_prec))
+    grid_df = grid_df.join(
+        word_df,
+        on=['filename', 'speaker', 'word_id'],
+        how='left',
+        maintain_order='left',
+    )
+
     return grid_df
 
 
@@ -369,18 +377,23 @@ def following_word(grid_df, word_tier='word'):
     """
     word_succ = f'{word_tier}_succ'
 
-    grid_df = grid_df.with_columns(
+    word_df = grid_df[['filename', 'speaker', word_tier, 'word_id']]
+    word_df = word_df.unique(maintain_order=True)
+    word_df = word_df.with_columns( \
         pl.col(word_tier).shift(-1).alias(word_succ))
+    word_df = word_df.drop(word_tier)
 
-    grid_df = grid_df.with_columns(
-        pl.when((pl.col('filename') == pl.col('filename').shift(-1)) & (pl.col('speaker') == pl.col('speaker').shift(-1))) \
-            .then(pl.col(word_succ)) \
-            .otherwise(pl.lit(None)) \
-            .alias(word_succ))
+    grid_df = grid_df.join(
+        word_df,
+        on=['filename', 'speaker', 'word_id'],
+        how='left',
+        maintain_order='left',
+    )
+
     return grid_df
 
 
-def preceeding_phon(grid_df, phon_tier='phone'):
+def preceding_phon(grid_df, phon_tier='phone'):
     """
     Code preceding phones with matching filename and speaker, marking
     that they belong to different words with '#'.
@@ -398,7 +411,7 @@ def preceeding_phon(grid_df, phon_tier='phone'):
             .alias(phon_prec))
 
     grid_df = grid_df.with_columns(
-        pl.when(pl.when((pl.col('filename') == pl.col('filename').shift(1)) & (pl.col('speaker') == pl.col('speaker').shift(1)))) \
+        pl.when((pl.col('filename') == pl.col('filename').shift(1)) & (pl.col('speaker') == pl.col('speaker').shift(1))) \
             .then(pl.col(phon_prec)) \
             .otherwise(pl.lit(None)) \
             .alias(phon_prec))
@@ -413,19 +426,57 @@ def following_phon(grid_df, phon_tier='phone'):
     """
     phon_succ = f'{phon_tier}_succ'
 
-    grid_df = grid_df.with_columns(pl.col('phone').shift(-1).alias(phon_suc))
+    grid_df = grid_df.with_columns(pl.col('phone').shift(-1).alias(phon_succ))
 
     grid_df = grid_df.with_columns(
         pl.when(pl.col('word_id') == pl.col('word_id').shift(-1)) \
-            .then(phon_succ) \
+            .then(pl.col(phon_succ)) \
             .otherwise('# '+ pl.col(phon_succ)) \
             .alias(phon_succ))
 
     grid_df = grid_df.with_columns(
-        pl.when(pl.when((pl.col('filename') == pl.col('filename').shift(-1)) & (pl.col('speaker') == pl.col('speaker').shift(-1)))) \
+        pl.when((pl.col('filename') == pl.col('filename').shift(-1)) & (pl.col('speaker') == pl.col('speaker').shift(-1))) \
             .then(pl.col(phon_succ)) \
             .otherwise(pl.lit(None)) \
             .alias(phon_succ))
+
+    return grid_df
+
+
+def syllable_count(grid_df, phon_tier='phone'):
+    """
+    Count vowels/syllables in each word.
+    Apply to result of combine_tiers().
+    """
+    syllcount_df = grid_df \
+        .group_by(['filename', 'speaker', 'word_id', 'word']) \
+        .agg(pl.col(phon_tier).str.contains(ARPABET_VOWELS).sum().alias('syll_count'))
+
+    grid_df = grid_df.join(
+        syllcount_df,
+        on=['filename', 'speaker', 'word_id', 'word'],
+        how='left',
+        maintain_order='left',
+    )
+
+    return grid_df
+
+
+def phon_count(grid_df, phon_tier='phone'):
+    """
+    Count segments/phones in each word.
+    Apply to result of combine_tiers().
+    """
+    phoncount_df = grid_df \
+        .group_by(['filename', 'speaker', 'word_id', 'word']) \
+        .agg(pl.count().alias('phon_count'))
+
+    grid_df = grid_df.join(
+        phoncount_df,
+        on=['filename', 'speaker', 'word_id', 'word'],
+        how='left',
+        maintain_order='left',
+    )
 
     return grid_df
 
